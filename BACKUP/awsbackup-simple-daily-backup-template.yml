@@ -1,0 +1,136 @@
+Description: Copyright CloudDog 2022. AWS CloudFormation To create AWS Backup for EC2
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: EC2-Backup
+        Parameters:
+          - EC2ScheduleExpression
+          - EC2StartWindowMinutes
+          - EC2CompletionWindowMinutes
+          - EC2DeleteAfterDays
+      - Label:
+          default: General Daily Backup
+        Parameters:
+          - DailyBackupEnabled
+          - DailyScheduleExpression
+          - DailyStartWindowMinutes
+          - DailyCompletionWindowMinutes
+          - DailyDeleteAfterDays
+Parameters:
+  EC2ScheduleExpression:
+    Type: String
+    Description: Schedule Expression to run the backup. Default to every 4h
+    Default: "cron(0 */4 * * ? *)"
+  EC2StartWindowMinutes:
+    Type: Number
+    Description: Window in minutes to start the backup
+    Default: 60
+  EC2CompletionWindowMinutes:
+    Type: Number
+    Description: Window in minutes to complete the backup
+    Default: 120
+  EC2DeleteAfterDays:
+    Type: Number
+    Description: How much days the bucket will be retained
+    Default: 7
+
+  DailyScheduleExpression:
+    Type: String
+    Description: Schedule Expression to run the daily backup. Default is at 0h
+    Default: "cron(0 0 * * ? *)"
+  DailyStartWindowMinutes:
+    Type: Number
+    Description: Window in minutes to start the backup
+    Default: 60
+  DailyCompletionWindowMinutes:
+    Type: Number
+    Description: Window in minutes to complete the backup
+    Default: 120
+  DailyDeleteAfterDays:
+    Type: Number
+    Description: How much days the bucket will be retained
+    Default: 30
+
+
+
+Resources:
+
+  BackupVault:
+    Type: "AWS::Backup::BackupVault"
+    Properties:
+      BackupVaultName: !Sub ${AWS::StackName}-Vault
+ 
+  BackupRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "backup.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+
+  EC2BasicBackupPlan:
+    Type: "AWS::Backup::BackupPlan"
+    DependsOn: BackupVault
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub ${AWS::StackName}-EC2
+        BackupPlanRule:
+          - RuleName: !Sub ${AWS::StackName}-EC2-rule
+            TargetBackupVault: !Sub ${AWS::StackName}-Vault
+            ScheduleExpression: !Ref EC2ScheduleExpression
+            StartWindowMinutes: !Ref EC2StartWindowMinutes
+            CompletionWindowMinutes: !Ref EC2CompletionWindowMinutes
+            Lifecycle:
+              DeleteAfterDays: !Ref EC2DeleteAfterDays
+            # RecoveryPointTags:
+            #   backup: !Sub ${AWS::StackName}-EC2
+
+  EC2BackupSelection:
+    Type: 'AWS::Backup::BackupSelection'
+    DependsOn: EC2BasicBackupPlan
+    Properties:
+      BackupPlanId: !Ref EC2BasicBackupPlan
+      BackupSelection:
+        SelectionName: !Sub ${AWS::StackName}-EC2-selection
+        IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: STRINGEQUALS
+            ConditionKey: ec2-backup
+            ConditionValue: 'yes'
+
+  BasicBackupPlan:
+    Type: "AWS::Backup::BackupPlan"
+    DependsOn: BackupVault
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub ${AWS::StackName}-plan
+        BackupPlanRule:
+          - RuleName: !Sub ${AWS::StackName}-diary
+            TargetBackupVault: !Sub ${AWS::StackName}-Vault
+            ScheduleExpression: !Ref DailyScheduleExpression
+            StartWindowMinutes: !Ref DailyStartWindowMinutes
+            CompletionWindowMinutes: !Ref DailyCompletionWindowMinutes
+            RecoveryPointTags:
+              backup-type: daily
+            Lifecycle:
+              DeleteAfterDays: !Ref DailyDeleteAfterDays
+
+  BackupSelection:
+    Type: 'AWS::Backup::BackupSelection'
+    Properties:
+      BackupPlanId: !Ref BasicBackupPlan
+      BackupSelection:
+        SelectionName: !Sub ${AWS::StackName}-selection
+        IamRoleArn: !GetAtt BackupRole.Arn
+        ListOfTags:
+          - ConditionType: STRINGEQUALS
+            ConditionKey: backup
+            ConditionValue: 'yes'

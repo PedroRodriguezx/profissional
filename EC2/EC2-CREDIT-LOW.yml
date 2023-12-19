@@ -1,0 +1,30 @@
+Parameters:
+  CreditAlarmName:
+    Type: String
+  SNSTopic:
+    Type: String
+  InstanceId:
+    Type: String
+
+Resources:
+  EC2CreditAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Ref CreditAlarmName
+      ActionsEnabled: true
+      OKActions: []
+      AlarmActions:
+        - !Ref SNSTopic
+      InsufficientDataActions: []
+      MetricName: CPUCreditBalance
+      Namespace: AWS/EC2
+      Statistic: Maximum
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 100
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: missing

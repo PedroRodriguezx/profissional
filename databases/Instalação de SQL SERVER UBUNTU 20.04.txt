@@ -1,0 +1,74 @@
+Instalação de SQL SERVER UBUNTU 20.04
+
+
+1 - curl https://packages.microsoft.com/config/ubuntu/20.04/prod.list | sudo tee /etc/apt/sources.list.d/msprod.list
+
+2 - curl https://packages.microsoft.com/keys/microsoft.asc | sudo apt-key --keyring /etc/apt/trusted.gpg.d/microsoft.asc.gpg add -
+
+3 - sudo apt-get update
+
+4 - sudo apt-get install -y mssql-tools
+
+5 - echo 'export PATH="$PATH:/opt/mssql-tools/bin"' >> ~/.bashrc
+source ~/.bashrc
+
+6 - sqlcmd -V
+
+
+
+COMANDO PARA RESTORE 
+
+exec msdb.dbo.rds_restore_database
+	@restore_db_name='DADOSADV',
+	@s3_arn_to_restore_from='<>',
+	@with_norecovery=1;
+
+COMANDO PARA CONCLUIR O RESTORE DO BANCO QUANDO PARAMETRO "NoRecovery" for igual a 1
+
+exec msdb.dbo.rds_finish_restore @db_name='DADOSADV';
+
+%tAw1gzCB%eQU.f)&5VC)(o8SHCNYccX
+
+
+COMANDO PARA VER PROGRESSO DO RESTORING 
+
+exec msdb.dbo.rds_task_status; 
+
+
+Política do bucket 
+
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Service": "rds.amazonaws.com"
+            },
+            "Action": [
+                "s3:ListBucket",
+                "s3:GetObject"
+            ],
+            "Resource": [
+                "<>",
+                "<>/*"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "AWS": "<>"
+            },
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObjectAcl"
+            ],
+            "Resource": [
+                "<>",
+                "<>/*"
+            ]
+        }
+    ]
+}
+

@@ -1,0 +1,30 @@
+Parameters: 
+  CPUAlarmName:
+    Type: String
+  SNStopic: 
+    Type: String
+  InstanceId:
+    Type: String
+    
+Resources:
+  CPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Ref CPUAlarmName
+      ActionsEnabled: true
+      OKActions: []
+      AlarmActions:
+        - !Ref SNStopic
+      InsufficientDataActions: []
+      MetricName: CPUUtilization
+      Namespace: AWS/EC2
+      Statistic: Maximum
+      Dimensions:
+        - Name: InstanceId
+          Value: !Ref InstanceId
+      Period: 300
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: missing

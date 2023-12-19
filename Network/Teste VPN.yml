@@ -1,0 +1,31 @@
+Parameters: 
+  ClientIP: 
+    Type: String
+    Description: IP interno do cliente
+
+Resources:
+  CustomerGatewayId:
+    Type: AWS::EC2::CustomerGateway
+    Properties:
+      BgpAsn: 65000
+      IpAddress: !Ref ClientIP
+      Type: ipsec.1
+
+  VirtualPrivateGatewayID:
+    Type: AWS::EC2::VPNGateway
+    Properties:
+      Type: ipsec.1
+
+  VPNID:
+    Type: AWS::EC2::VPNConnection
+    DependsOn:
+      - CustomerGatewayId
+      - VirtualPrivateGatewayID
+    Properties:
+      CustomerGatewayId: !Ref CustomerGatewayId
+      VpnGatewayId: !Ref VirtualPrivateGatewayID
+      StaticRoutesOnly: yes
+      Type: ipsec.1
+
+
+

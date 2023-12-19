@@ -1,0 +1,10 @@
+Query para contar quantidade de acesso de um ip. WAF logs + Athena
+
+SELECT 
+  count() AS count,
+  httprequest.clientip
+FROM waf_logs
+WHERE "date" = '2023/05/11' AND action = 'ALLOW'
+GROUP BY httprequest.clientip
+HAVING count() > 1
+ORDER BY count DESC

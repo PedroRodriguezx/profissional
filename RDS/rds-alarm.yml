@@ -1,0 +1,89 @@
+Parameters: 
+  CPUAlarmName:
+    Type: String
+    Description: CLIENTE_AMBIENTE_OBJETO_METRICA_MOTIVO
+  SNStopic: 
+    Type: String
+    Description: SNS ARN
+  RDSname:
+    Type: String
+    Description: nome do RDS
+ # CreditAlarmName:
+ #   Type: String
+  DiskAlarmName:
+     Type: String
+
+
+Resources:    
+
+  DSCPUUtilizationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Ref CPUAlarmName
+      ActionsEnabled: true
+      OKActions: []
+      AlarmActions:
+          - !Ref SNStopic
+      InsufficientDataActions: []
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Maximum
+      Dimensions:
+          - Name: DBInstanceIdentifier
+            Value: !Ref RDSname
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: missing
+
+
+ # RDSCreditAlarm:
+ #   Type: AWS::CloudWatch::Alarm
+ #   Properties:
+ #     AlarmName: !Ref CreditAlarmName
+ #     ActionsEnabled: true
+ #     OKActions: []
+ #     AlarmActions:
+ #         - !Ref SNStopic
+ #     InsufficientDataActions: []
+ #     MetricName: CPUCreditBalance
+ #     Namespace: AWS/RDS
+ #     Statistic: Maximum
+ #     Dimensions:
+ #         - Name: DBInstanceIdentifier
+ #           Value: !Ref RDSname
+ #     Period: 60
+ #     EvaluationPeriods: 5
+ #     DatapointsToAlarm: 5
+ #     Threshold: 100
+ #     ComparisonOperator: LessThanOrEqualToThreshold
+ #     TreatMissingData: missing
+
+
+  RDSFreeStorageSpace:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Ref DiskAlarmName
+      ActionsEnabled: true
+      OKActions: []
+      AlarmActions:
+          - !Ref SNStopic
+      InsufficientDataActions: []
+      MetricName: FreeStorageSpace
+      Namespace: AWS/RDS
+      Statistic: Maximum
+      Dimensions:
+          - Name: DBInstanceIdentifier
+            Value: !Ref RDSname
+      Period: 60
+      EvaluationPeriods: 1
+      DatapointsToAlarm: 1
+      Threshold: 1000000000
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: missing
+
+
+
+

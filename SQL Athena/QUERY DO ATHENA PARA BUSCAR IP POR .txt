@@ -1,0 +1,50 @@
+QUERY DO ATHENA PARA BUSCAR IP POR MAIORES BYTES ENVIADOS.
+
+
+CREATE DATABASE <>;
+CREATE EXTERNAL TABLE IF NOT EXISTS <> (
+version int,
+account string,
+interfaceid string,
+sourceaddress string,
+destinationaddress string,
+sourceport int,
+destinationport int,
+protocol int,
+numpackets int,
+numbytes bigint,
+starttime int,
+endtime int,
+action string,
+logstatus string,
+vpcid string,
+subnetid string,
+instanceid string,
+tcpflags int,
+type string,
+pktsrcaddr string,
+pktdstaddr string,
+aws_region string,
+azid string,
+sublocationtype string,
+sublocationid string,
+pktsrcawsservice string,
+pktdstawsservice string,
+flowdirection string,
+trafficpath string
+)
+PARTITIONED BY (region string, day string)
+ROW FORMAT DELIMITED
+FIELDS TERMINATED BY ' '
+LOCATION '<>'
+
+
+SELECT sourceaddress, SUM(numbytes) AS total_bytes
+FROM "default"."test_table_vpclogs"
+GROUP BY sourceaddress
+ORDER BY total_bytes DESC
+
+CREATE DATABASE default;
+
+
+

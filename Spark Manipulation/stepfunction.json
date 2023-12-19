@@ -1,0 +1,159 @@
+{
+  "Comment": "An example of the Amazon States Language for running jobs on Amazon EMR",
+  "StartAt": "Create an EMR cluster",
+  "States": {
+    "Create an EMR cluster": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::elasticmapreduce:createCluster.sync",
+      "Parameters": {
+        "Name": "clouddog-horas-analyse",
+        "VisibleToAllUsers": true,
+        "ReleaseLabel": "emr-6.15.0",
+        "Applications": [
+          {
+            "Name": "Hive"
+          },
+          {
+            "Name": "Spark"
+          },
+          {
+            "Name": "Hadoop"
+          }
+        ],
+        "ServiceRole": "AmazonEMR-ServiceRole-20231121T140037",
+        "JobFlowRole": "AmazonEMR-InstanceProfile-20231121T140020",
+        "LogUri": "<>/logs/",
+        "Instances": {
+          "KeepJobFlowAliveWhenNoSteps": true,
+          "InstanceFleets": [
+            {
+              "Name": "MASTER",
+              "InstanceFleetType": "MASTER",
+              "TargetOnDemandCapacity": 1,
+              "InstanceTypeConfigs": [
+                {
+                  "InstanceType": "m7g.xlarge"
+                }
+              ]
+            },
+            {
+              "Name": "MyCoreFleet",
+              "InstanceFleetType": "CORE",
+              "TargetOnDemandCapacity": 1,
+              "InstanceTypeConfigs": [
+                {
+                  "InstanceType": "m7g.xlarge"
+                }
+              ]
+            }
+          ]
+        },
+        "ResultPath": "$.cluster",
+        "Next": "Run first step"
+      },
+      "Run first step": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+        "Parameters": {
+          "ClusterId.$": "$.cluster.ClusterId",
+          "Step": {
+            "Name": "TimePerCustomer.py",
+            "ActionOnFailure": "CONTINUE",
+            "SparkSubmit": {
+              "EntryPoint": "<>/files/TimePerCustomer.py",
+              "Args": ["<COMMAND_ARGUMENTS>"]
+            }
+          }
+        },
+        "Retry": [
+          {
+            "ErrorEquals": ["States.ALL"],
+            "IntervalSeconds": 1,
+            "MaxAttempts": 3,
+            "BackoffRate": 2.0
+          }
+        ],
+        "ResultPath": "$.firstStep",
+        "Next": "Run second step"
+      },
+      "Run second step": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+        "Parameters": {
+          "ClusterId.$": "$.cluster.ClusterId",
+          "Step": {
+            "Name": "TimePerEmployee.py",
+            "ActionOnFailure": "CONTINUE",
+            "SparkSubmit": {
+              "EntryPoint": "<>/files/TimePerEmployee.py",
+              "Args": ["<COMMAND_ARGUMENTS>"]
+            }
+          }
+        },
+        "Run third step": {
+          "Type": "Task",
+          "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+          "Parameters": {
+            "ClusterId.$": "$.cluster.ClusterId",
+            "Step": {
+              "Name": "TimeAggregateperEmployeeInEachCustomer.py",
+              "ActionOnFailure": "CONTINUE",
+              "SparkSubmit": {
+                "EntryPoint": "<>/files/TimeAggregateperEmployeeInEachCustomer.py",
+                "Args": ["<COMMAND_ARGUMENTS>"]
+              }
+            }
+          },
+          "Run forth step": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+            "Parameters": {
+              "ClusterId.$": "$.cluster.ClusterId",
+              "Step": {
+                "Name": "TimeAggregateperEmployeeInDate.py",
+                "ActionOnFailure": "CONTINUE",
+                "SparkSubmit": {
+                  "EntryPoint": "<>/files/TimeAggregateperEmployeeInDate.py",
+                  "Args": ["<COMMAND_ARGUMENTS>"]
+                }
+              }
+            },
+            "Run fifth step": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+              "Parameters": {
+                "ClusterId.$": "$.cluster.ClusterId",
+                "Step": {
+                  "Name": "TimeAggregateperCustomerInDate.py",
+                  "ActionOnFailure": "CONTINUE",
+                  "SparkSubmit": {
+                    "EntryPoint": "<>/files/TimeAggregateperCustomerInDate.py",
+                    "Args": ["<COMMAND_ARGUMENTS>"]
+                  }
+                }
+              },
+              "Retry": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "IntervalSeconds": 1,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2.0
+                }
+              ],
+              "ResultPath": "$.secondStep",
+              "Next": "Terminate Cluster"
+            }
+          }
+        }
+      },
+      "Terminate Cluster": {
+        "Type": "Task",
+        "Resource": "arn:aws:states:::elasticmapreduce:addStep.sync",
+        "Parameters": {
+          "ClusterId.$": "$.cluster.ClusterId"
+        },
+        "End": true
+      }
+    }
+  }
+}

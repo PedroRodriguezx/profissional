@@ -1,0 +1,295 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: --- Setup foundation required for CloudFormation Cross Account access on the Primary account
+
+Parameters:
+  LFDatabaseName:
+    Type: String
+    Default: database-lf-xaccount-blog
+  LFTableName:
+    Type: String
+    Default: table-lf-xaccount-blog
+
+Resources: 
+  # custom resource to load data into the s3 bucket when this stack is first deployed
+  # we use an inlined lambda functions to keep things simple!
+  LoadDataBucketRole:
+    Type: "AWS::IAM::Role"
+    Properties:     
+        AssumeRolePolicyDocument: 
+          Version: "2012-10-17"
+          Statement: 
+            - Effect: "Allow"
+              Principal: 
+                Service: 
+                  - "lambda.amazonaws.com"
+              Action: 
+                - "sts:AssumeRole"
+        Path: "/"
+        ManagedPolicyArns:
+          - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+          - !Ref LoadDataS3Policy
+
+  LoadDataS3Policy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: S3 and KMS Key Access for the Load Data Lambda
+      Path: /
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:ListBucket
+            Resource:
+              - !GetAtt s3BucketPri.Arn
+              - !Join [ '', [!GetAtt s3BucketPri.Arn, '/*']]
+              - "arn:aws:s3:::nyc-tlc/*"
+
+  DataAccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: S3 and KMS Key Access
+      Path: /
+      Roles:
+       - !Ref iamRolePriDataLakeAdmin
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: "Allow"
+            Action:
+              - s3:PutObject
+              - s3:GetObject
+              - s3:ListBucket
+            Resource:
+              - !GetAtt s3BucketPri.Arn
+              - !Join [ '', [!GetAtt s3BucketPri.Arn, '/*']]
+            
+  AthenaQueryOutputPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy allowing access to Athena output S3 Bucket
+      PolicyDocument:  
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+            - s3:PutObject
+            - s3:GetObject
+            - s3:ListBucket
+          Resource:
+            - !Sub "arn:aws:s3:::${lfs3athenaoutput}"
+            - !Sub "arn:aws:s3:::${lfs3athenaoutput}/*"
+
+  LoadDataBucketLambda:
+    Type: AWS::Lambda::Function
+    DependsOn: LoadDataS3Policy
+    Properties:
+      Description: Custom Resource Lambda that loads the data bucket
+      Handler: index.handler
+      Runtime: python3.7
+      Timeout: 300
+      Role: !GetAtt LoadDataBucketRole.Arn
+      Code:
+        ZipFile: |
+          import os
+          import boto3
+          import cfnresponse
+          import urllib.request
+          def handler(event, context):
+            try:
+              bucket_name = os.environ.get("DATA_BUCKET") 
+              # copy data to s3 bucket
+              s3 = boto3.resource('s3')
+              data_copy_source = {
+                  'Bucket': 'nyc-tlc',
+                  'Key': 'trip data/yellow_tripdata_2020-06.csv'
+              }
+              bucket = s3.Bucket(bucket_name)
+              bucket.copy(data_copy_source, 'glue/nyctaxi/yellow_tripdata_2020-06.csv')
+              # signal
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, {}, context.log_stream_name)
+            except Exception as err:
+              print("Error in Custom Resource", err)
+              # signal
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, context.log_stream_name)
+      Environment:
+        Variables:
+          DATA_BUCKET: !Ref s3BucketPri
+            
+  LoadDataBucket: 
+      Type: Custom::LoadDataBucket
+      Properties:
+        ServiceToken: !GetAtt LoadDataBucketLambda.Arn
+
+  s3AccessPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+        Description: Policy allowing access to the created S3 bucket GDC and its keys
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+                - s3:ListBucket
+              Resource:
+                - !GetAtt s3BucketPri.Arn
+                - !Join [ '', [!GetAtt s3BucketPri.Arn, '/*']]
+
+  glueDatabasePri:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Description: Glue Database for Lake Formation Cross Account
+        Name: !Ref LFDatabaseName
+        Parameters: { "CreateTableDefaultPermissions": "" }
+
+  glueTablePri:
+    Type: AWS::Glue::Table
+    DependsOn: glueDatabasePri
+    Properties:
+        DatabaseName: !Ref LFDatabaseName
+        CatalogId: !Ref AWS::AccountId
+        TableInput:
+          Name: !Ref LFTableName
+          Description: NYC Taxi Trips
+          TableType: EXTERNAL_TABLE
+          Parameters: { "classification": "csv" }
+          StorageDescriptor:
+            OutputFormat: org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat
+            Columns:
+            - Name: vendorid
+              Type: bigint
+            - Name: lpep_pickup_datetime
+              Type: string
+            - Name: lpep_dropoff_datetime
+              Type: string
+            - Name: store_and_fwd_flag
+              Type: string
+            - Name: ratecodeid
+              Type: bigint
+            - Name: pulocationid
+              Type: bigint
+            - Name: dolocationid
+              Type: bigint
+            - Name: passenger_count
+              Type: bigint
+            - Name: trip_distance
+              Type: double
+            - Name: fare_amount
+              Type: double
+            - Name: extra
+              Type: double
+            - Name: mta_tax
+              Type: double
+            - Name: tolls_amount
+              Type: double
+            - Name: ehail_fee
+              Type: string
+            - Name: improvement_surcharge
+              Type: double
+            - Name: total_amount
+              Type: double
+            - Name: payment_type
+              Type: bigint
+            - Name: trip_type
+              Type: bigint 
+            InputFormat: org.apache.hadoop.mapred.TextInputFormat
+            Location: !Sub "s3://${s3BucketPri}/"
+            SerdeInfo:
+              Parameters:
+                field.delim: ","
+              SerializationLibrary: org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe
+
+  s3BucketPri:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: Private              
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  lfs3athenaoutput:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: Private              
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  lfAthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: LakeFormationCrossAccount
+      Description: Workgroup to access Lake Formation Cross Account
+      State: ENABLED
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${lfs3athenaoutput}/"
+
+  iamRolePriDataLakeAdmin:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: "LakeFormationPrimaryAdmin"
+      Path: "/"   
+      AssumeRolePolicyDocument: 
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action: "sts:AssumeRole"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLakeFormationDataAdmin
+        - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
+        - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
+        - arn:aws:iam::aws:policy/CloudWatchLogsAdministratorAccess
+        - arn:aws:iam::aws:policy/AWSLakeFormationCrossAccountManager
+        - !Ref lfprirampolicy
+        - !Ref LFServiceLinkedPolicy
+        - !Ref AthenaQueryOutputPolicy
+
+  LFServiceLinkedPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy allowing LakeFormation register locations and update the role AWSServiceRoleForLakeFormationDataAccess
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: iam:CreateServiceLinkedRole
+            Resource: "*"
+            Condition:
+              StringEquals:
+                iam:AWSServiceName: lakeformation.amazonaws.com
+          - Effect: Allow
+            Action: iam:PutRolePolicy
+            Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/lakeformation.amazonaws.com/AWSServiceRoleForLakeFormationDataAccess"
+  
+  lfprirampolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      Description: Policy allowing access to RAM, required to share tables cross account with Lake Formation
+      PolicyDocument:  
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Action:
+          - ram:AcceptResourceShareInvitation
+          - ram:RejectResourceShareInvitation
+          - organizations:DescribeAccount
+          - ec2:DescribeAvailabilityZones
+          - ram:EnableSharingWithAwsOrganization
+          Resource: "*"
+
+Outputs:
+  S3BucketPrimary:
+    Value: !Ref s3BucketPri

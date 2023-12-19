@@ -1,0 +1,584 @@
+# Este template é de java e está puxando do codecommit---
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Copyright CloudDog 2020. Automate provisioning of CodeBuild with CodePipeline to deploy ECS Containers'
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Dependencies
+        Parameters:
+          - DevOpsBaselineStack
+
+      - Label:
+          default: Source Code 
+        Parameters:
+          - RepositoryName
+
+      - Label:
+          default: Dev Deployment Target 
+        Parameters:
+          - DevelopmentBranch
+          - DevServiceName
+          - DevClusterName
+          - DevDeployerRoleArn
+
+      # - Label:
+      #     default: Stg Deployment Target 
+      #   Parameters:
+      #     - MasterBranch
+      #     - StgServiceName
+      #     - StgClusterName
+      #     - StgDeployerRoleArn
+
+      # - Label:
+      #     default: Prd Deployment Target 
+      #   Parameters:
+      #     - PrdServiceName
+      #     - PrdClusterName
+      #     - PrdDeployerRoleArn
+
+      - Label:
+          default: Accounts
+        Parameters:
+          - DevAccount
+          # - StgAccount
+          # - PrdAccount
+
+    ParameterLabels:
+      DevOpsBaselineStack:
+        default: DevOps Baseline Stack
+      RepositoryName: 
+        default: CodeCommit and ECR Repositories
+      DevelopmentBranch:
+        default: CodeCommit Development Branch        
+      DevServiceName: 
+        default: Dev ECS Service Name 
+      DevClusterName:
+        default: Dev ECS Cluster Name
+      DevDeployerRoleArn:
+        default: Dev Deployer Role Arn
+      # MasterBranch:
+      #   default: CodeCommit Master Branch 
+      # StgServiceName:
+      #   default: Stg ECS Service Name 
+      # StgClusterName:
+      #   default: Stg ECS Cluster Name
+      # StgDeployerRoleArn:
+      #   default: Stg Deployer Role Arn
+      # PrdServiceName:
+      #   default: Stg ECS Service Name 
+      # PrdClusterName:
+      #   default: Prd ECS Cluster Name
+      # PrdDeployerRoleArn:
+      #   default: Prd Deployer Role Arn
+      # DevAccount:
+      #   default: Development Account
+      # StgAccount:
+      #   default: Staging Account
+      # PrdAccount:
+      #   default: Production Account
+      # RepositoryName:
+      #   default: CodeCommit Repository Name
+      # DevOpsBaselineStack:
+      #   default: DevOps Baseline Stack
+
+Parameters:
+  DevOpsBaselineStack:
+    Type: String
+    Default: devops-baseline
+    Description: The name of devops-baseline stack with all the roles to be used in pipeline
+
+  RepositoryName:
+    Description: The name of the CodeCommit and ECR Repositories to be used in pipeline
+    Type: String
+
+  DevelopmentBranch:
+    Description: The name of the branch to trigger development pipeline
+    Type: String
+    Default: development
+    AllowedPattern: "[\\x20-\\x7E]*"
+    ConstraintDescription: Can contain only ASCII characters.
+
+  DevServiceName:
+    Description: The name of the ECS Service to be updated during deployment in development environment
+    Type: String
+    Default: ''
+
+  DevClusterName:
+    Description: The name of the ECS Cluster to be updated in development environment
+    Type: String
+    Default: ''
+
+  DevDeployerRoleArn:
+    Description: The deployer Role Arn for development environment
+    Type: String
+    Default: ''
+
+  # MasterBranch:
+  #   Description: The name of the branch to trigger development pipeline
+  #   Type: String
+  #   Default: master
+  #   AllowedPattern: "[\\x20-\\x7E]*"
+  #   ConstraintDescription: Can contain only ASCII characters.
+
+  # StgServiceName:
+  #   Description: The name of the ECS Service to be updated during deployment in staging environment
+  #   Type: String
+  #   Default: ''
+
+  # StgClusterName:
+  #   Description: The name of the ECS Cluster to be updated in staging environment
+  #   Type: String
+  #   Default: ''
+
+  # StgDeployerRoleArn:
+  #   Description: The deployer Role Arn for staging environment
+  #   Type: String
+  #   Default: ''
+
+  # PrdServiceName:
+  #   Description: The name of the ECS Service to be updated during deployment in production environment
+  #   Type: String
+  #   Default: ''
+
+  # PrdClusterName:
+  #   Description: The name of the ECS Cluster to be updated in production environment
+  #   Type: String
+  #   Default: ''
+
+  # PrdDeployerRoleArn:
+  #   Description: The deployer Role Arn for production environment
+  #   Type: String
+  #   Default: ''
+
+  DevAccount:
+    Description: Development Account Number
+    AllowedPattern: (^$|[0-9]{12})
+    ConstraintDescription: "must be a valid account number or empty"
+    Type: String
+
+  # StgAccount:
+  #   Description: Development Account Number
+  #   AllowedPattern: (^$|[0-9]{12})
+  #   ConstraintDescription: "must be a valid account number or empty"
+  #   Type: String
+
+  # PrdAccount:
+  #   Description: Development Account Number
+  #   AllowedPattern: (^$|[0-9]{12})
+  #   ConstraintDescription: "must be a valid account number or empty"
+  #   Type: String
+
+# Conditions:
+#   MasterBranchCondition: !Not [ !Equals [ !Ref MasterBranch, "" ] ]
+#   # StgServiceNameCondition: !Not [ !Equals [ !Ref StgServiceName, "" ] ]
+#   # StgClusterNameCondition: !Not [ !Equals [ !Ref StgClusterName, "" ] ]
+#   # StgDeployerRoleArnCondition: !Not [ !Equals [ !Ref StgDeployerRoleArn, "" ] ]
+#   # PrdServiceNameCondition: !Not [ !Equals [ !Ref PrdServiceName, "" ] ]
+#   # PrdClusterNameCondition: !Not [ !Equals [ !Ref PrdClusterName, "" ] ]
+#   # PrdDeployerRoleArnCondition: !Not [ !Equals [ !Ref PrdDeployerRoleArn, "" ] ]
+#   MasterDeployCondition: !And  
+#     - !Condition MasterBranchCondition 
+#     # - !Condition StgServiceNameCondition
+#     # - !Condition StgClusterNameCondition
+#     # - !Condition StgDeployerRoleArnCondition
+#     # - !Condition PrdServiceNameCondition
+#     # - !Condition PrdClusterNameCondition
+#     # - !Condition PrdDeployerRoleArnCondition
+
+Resources:
+  CodeBuildProject:
+    Type: AWS::CodeBuild::Project
+    Properties:    
+      Name: !Ref 'AWS::StackName'
+      Description: Build application
+      ServiceRole: 
+        Fn::ImportValue: !Sub ${DevOpsBaselineStack}-CodeBuildRoleArn
+      Artifacts:
+        Type: CODEPIPELINE
+      Environment:
+        Type: LINUX_CONTAINER
+        ComputeType: BUILD_GENERAL1_SMALL
+        PrivilegedMode: true
+        Image: aws/codebuild/standard:2.0
+        EnvironmentVariables:
+          - Name: ECR_REPOSITORY_URI
+            Value: !Sub ${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${RepositoryName}            
+          - Name: IMAGE_TAG
+            Value: latest
+          - Name: TASK_DEF_CONTAINER_NAME              
+            Value: !Ref RepositoryName
+          - Name: DOCKERHUB_USERNAME
+            Type: SECRETS_MANAGER
+            Value: !Sub
+              - ${DockerHubSecretName}:username
+              - DockerHubSecretName:
+                  Fn::ImportValue: !Sub ${DevOpsBaselineStack}-DockerHubSecretName
+          - Name: DOCKERHUB_PASSWORD
+            Type: SECRETS_MANAGER
+            Value: !Sub
+              - ${DockerHubSecretName}:password
+              - DockerHubSecretName:
+                  Fn::ImportValue: !Sub ${DevOpsBaselineStack}-DockerHubSecretName
+      Cache:
+        Type: S3
+        Location: !Sub 
+          - ${BucketName}/${Prefix}
+          - BucketName:
+              Fn::ImportValue: !Sub ${DevOpsBaselineStack}-CacheBucketName
+            Prefix: !Ref 'AWS::StackName'
+      Source:
+        Type: CODEPIPELINE
+        BuildSpec: |
+          version: 0.2
+          phases:
+            install:
+              runtime-versions:
+                docker: 18
+              commands:
+                - docker login -u $DOCKERHUB_USERNAME -p $DOCKERHUB_PASSWORD    
+
+            pre_build:
+              commands:
+                - echo Logging in to Amazon ECR...
+                - $(aws ecr get-login --no-include-email --region $AWS_DEFAULT_REGION)
+                - COMMIT_HASH=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-7)
+                - IMAGE_TAG=${COMMIT_HASH:=latest}
+                
+            build:
+              commands:
+                - echo Build started on `date`
+                - echo Building the Docker image...       
+                - mvn clean install -DskipTests
+                - docker build -t $ECR_REPOSITORY_URI:latest .
+                - docker tag $ECR_REPOSITORY_URI:latest $ECR_REPOSITORY_URI:$IMAGE_TAG 
+                
+            post_build:
+              commands:
+                - echo Build completed on `date`
+                - echo Pushing the Docker image...
+                - docker push $ECR_REPOSITORY_URI:latest
+                - docker push $ECR_REPOSITORY_URI:$IMAGE_TAG
+                - printf '[{"name":"%s","imageUri":"%s"}]' $TASK_DEF_CONTAINER_NAME $ECR_REPOSITORY_URI:$IMAGE_TAG > imagedefinitions.json
+
+          artifacts:
+            files:
+              - imagedefinitions.json     
+
+      TimeoutInMinutes: 30
+
+  # Application:
+  #   Type: AWS::CodeDeploy::Application
+  #   Properties:
+  #     ComputePlatform: ECS
+
+  # DeploymentGroup:  
+  #   Type: AWS::CodeDeploy::DeploymentGroup
+  #   DependsOn: Application
+  #   Properties:
+  #     ApplicationName: !Ref Application
+  #     AutoScalingGroups: 
+  #       - Ref: CodeDeployAutoScalingGroups
+  #     Deployment: 
+  #       Description: "A sample deployment"
+  #       IgnoreApplicationStopFailures: true
+  #         Revision: 
+  #     ServiceRoleArn: !GetAtt CodeDeployRole.Arn        
+  
+  DevelopmentPipeLine:
+    Type: AWS::CodePipeline::Pipeline
+    Properties: 
+      ArtifactStore: 
+        Location: 
+          Fn::ImportValue: !Sub ${DevOpsBaselineStack}-ArtifactsBucketName
+        Type: S3
+        EncryptionKey: 
+          Id: 
+            Fn::ImportValue: !Sub ${DevOpsBaselineStack}-ArtifactsKeyArn
+          Type: KMS
+      Name: !Sub ${AWS::StackName}-${DevelopmentBranch}
+      RestartExecutionOnUpdate: False
+      RoleArn: 
+        Fn::ImportValue: !Sub ${DevOpsBaselineStack}-CodePipelineRoleArn
+      Stages:
+        - Name: Source
+          Actions: 
+          - Name: Source
+            ActionTypeId: 
+              Category: Source
+              Owner: AWS
+              Provider: CodeCommit
+              Version: '1'
+            Configuration:
+              RepositoryName: !Ref RepositoryName
+              BranchName: !Ref DevelopmentBranch
+              PollForSourceChanges: False
+            Region: !Ref AWS::Region
+            RunOrder: 1
+            OutputArtifacts:
+              - Name: source-output-artifacts
+        - Name: Build
+          Actions:
+          - Name: Build
+            ActionTypeId:
+              Category: Build
+              Owner: AWS
+              Version: '1'
+              Provider: CodeBuild
+            OutputArtifacts:
+              - Name: build-output-artifacts
+            InputArtifacts:
+              - Name: source-output-artifacts
+            Configuration:
+                ProjectName: !Ref CodeBuildProject 
+            RunOrder: 1     
+        - Name: DEV-Deploy
+          Actions:
+          - Name: Deploy
+            ActionTypeId:
+              Category: Deploy
+              Owner: AWS
+              Version: '1'
+              Provider: ECS
+            InputArtifacts:
+              - Name: build-output-artifacts
+            Configuration:
+                ClusterName: !Ref DevClusterName
+                ServiceName: !Ref DevServiceName
+                FileName: imagedefinitions.json                  
+            RunOrder: 1  
+            RoleArn: !Ref DevDeployerRoleArn
+            Region: !Ref AWS::Region
+      
+  DevelopmentCloudWatchEventRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: !Sub Monitor of ${RepositoryName} to trigger Master Pipeline
+      EventPattern:
+        source:
+          - aws.codecommit
+        detail-type:
+          - CodeCommit Repository State Change
+        resources:
+          - !Sub arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${RepositoryName}
+        detail:
+          event:
+            - referenceCreated
+            - referenceUpdated
+          referenceType:
+            - branch
+          referenceName:
+            - !Ref DevelopmentBranch
+      Targets:
+        - Arn: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${DevelopmentPipeLine} 
+          RoleArn: 
+            Fn::ImportValue: !Sub ${DevOpsBaselineStack}-CloudWatchRoleArn
+          Id: codepipeline   
+
+  # MasterPipeLine:
+  #   Type: AWS::CodePipeline::Pipeline
+  #   Condition: MasterDeployCondition
+  #   Properties: 
+  #     ArtifactStore: 
+  #       Location: 
+  #         Fn::ImportValue: !Sub ${DevOpsBaselineStack}-ArtifactsBucketName
+  #       Type: S3
+  #       EncryptionKey: 
+  #         Id: 
+  #           Fn::ImportValue: !Sub ${DevOpsBaselineStack}-ArtifactsKeyArn
+  #         Type: KMS
+  #     Name: !Sub ${AWS::StackName}-${MasterBranch}
+  #     RestartExecutionOnUpdate: False
+  #     RoleArn: 
+  #       Fn::ImportValue: !Sub ${DevOpsBaselineStack}-CodePipelineRoleArn
+  #     Stages:
+  #       - Name: Source
+  #         Actions: 
+  #         - Name: Source
+  #           Namespace: SourceVariables
+  #           ActionTypeId: 
+  #             Category: Source
+  #             Owner: AWS
+  #             Provider: CodeCommit
+  #             Version: '1'
+  #           Configuration:
+  #             RepositoryName: !Ref RepositoryName
+  #             BranchName: !Ref MasterBranch
+  #             PollForSourceChanges: False
+  #           Region: !Ref AWS::Region
+  #           RunOrder: 1
+  #           OutputArtifacts:
+  #             - Name: source-output-artifacts
+  #       - Name: Build
+  #         Actions:
+  #         - Name: Build
+  #           ActionTypeId:
+  #             Category: Build
+  #             Owner: AWS
+  #             Version: '1'
+  #             Provider: CodeBuild
+  #           OutputArtifacts:
+  #             - Name: build-output-artifacts
+  #           InputArtifacts:
+  #             - Name: source-output-artifacts
+  #           Configuration:
+  #               ProjectName: !Ref CodeBuildProject
+  #           RunOrder: 1     
+  #       - Name: STG-Deploy
+  #         Actions:
+  #         - Name: Deploy
+  #           ActionTypeId:
+  #             Category: Deploy
+  #             Owner: AWS
+  #             Version: '1'
+  #             Provider: ECS
+  #           InputArtifacts:
+  #             - Name: build-output-artifacts
+  #           Configuration:
+  #               ClusterName: !If [ StgClusterNameCondition, !Ref StgClusterName, !Ref AWS::NoValue ]
+  #               ServiceName: !If [ StgServiceNameCondition, !Ref StgServiceName, !Ref AWS::NoValue ] 
+  #               FileName: imageDetail.json                  
+  #           RunOrder: 1  
+  #           RoleArn: !If [ StgDeployerRoleArnCondition, !Ref StgDeployerRoleArn, !Ref AWS::NoValue ] 
+  #           Region: !Ref AWS::Region
+  #       - Name: PRD-Deploy
+  #         Actions:
+  #         - Name: Approve_Deployment
+  #           ActionTypeId: 
+  #             Category: Approval 
+  #             Owner: AWS 
+  #             Version: '1'
+  #             Provider: Manual
+  #           Configuration:
+  #             NotificationArn: 
+  #               Fn::ImportValue: !Sub ${DevOpsBaselineStack}-ApprovalRequestTopicArn
+  #             # ExternalEntityLink: 
+  #             CustomData: "#SourceVariables.CommitMessage"
+  #           RunOrder: 1           
+  #         - Name: Deploy
+  #           ActionTypeId:
+  #             Category: Deploy
+  #             Owner: AWS
+  #             Version: '1'
+  #             Provider: ECS
+  #           InputArtifacts:
+  #             - Name: build-output-artifacts
+  #           Configuration:
+  #               ClusterName: !If [ PrdClusterNameCondition, !Ref PrdClusterName, !Ref AWS::NoValue ]
+  #               ServiceName: !If [ PrdServiceNameCondition, !Ref PrdServiceName, !Ref AWS::NoValue ] 
+  #               FileName: imageDetail.json                  
+  #           RunOrder: 2
+  #           RoleArn: !If [ PrdDeployerRoleArnCondition, !Ref PrdDeployerRoleArn, !Ref AWS::NoValue ] 
+  #           Region: !Ref AWS::Region
+
+  # MasterCloudWatchEventRule:
+  #   Type: AWS::Events::Rule
+  #   Condition: MasterDeployCondition
+  #   Properties:
+  #     Description: !Sub Monitor ${MasterBranch} of ${RepositoryName} to trigger Master Pipeline
+  #     EventPattern:
+  #       source:
+  #         - aws.codecommit
+  #       detail-type:
+  #         - CodeCommit Repository State Change
+  #       resources:
+  #         - !Sub arn:aws:codecommit:${AWS::Region}:${AWS::AccountId}:${RepositoryName}
+  #       detail:
+  #         event:
+  #           - referenceCreated
+  #           - referenceUpdated
+  #         referenceType:
+  #           - branch
+  #         referenceName:
+  #           - !Ref MasterBranch
+  #     Targets:
+  #       - Arn: !Sub arn:aws:codepipeline:${AWS::Region}:${AWS::AccountId}:${MasterPipeLine} 
+  #         RoleArn: 
+  #           Fn::ImportValue: !Sub ${DevOpsBaselineStack}-CloudWatchRoleArn
+  #         Id: codepipeline
+  
+  # Code:
+  #   Type: AWS::CodeCommit::Repository
+  #   # DeletionPolicy: Retain
+  #   # UpdateReplacePolicy: Retain
+  #   Properties:
+  #     RepositoryName: !Ref RepositoryName
+  #     RepositoryDescription: CodeCommit Repository
+  #     Triggers:
+  #     - Name: MasterTrigger
+  #       CustomData: !Ref RepositoryName
+  #       DestinationArn: 
+  #         Fn::ImportValue: !Sub ${DevOpsBaselineStack}-PushNotificationTopicArn
+  #       Events:
+  #       - all
+
+  Ecr:
+    Type: AWS::ECR::Repository
+    # DeletionPolicy: Retain
+    # UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Ref RepositoryName
+      RepositoryPolicyText: !Sub |
+        {
+          "Version": "2008-10-17",
+          "Statement": [
+            {
+              "Sid": "AllowPushPull",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [ 
+                  "arn:aws:iam::${AWS::AccountId}:root"
+                ]
+              },
+              "Action": [
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
+                "ecr:PutImage",
+                "ecr:InitiateLayerUpload",
+                "ecr:UploadLayerPart",
+                "ecr:CompleteLayerUpload"
+              ]
+            },
+            {
+              "Sid": "AllowPull",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": [
+                  "arn:aws:iam::${DevAccount}:root"
+                ]
+              },
+              "Action": [
+                "ecr:GetDownloadUrlForLayer",
+                "ecr:BatchGetImage",
+                "ecr:BatchCheckLayerAvailability"
+              ]
+            }
+          ]
+        }
+
+Outputs:
+  EcrName:
+    Value: !Ref Ecr
+    Description: ECR Repository name
+    Export:
+      Name: !Sub ${AWS::StackName}-EcrName
+  EcrArn:
+    Value: !GetAtt Ecr.Arn
+    Description: ECR Repository Arn
+    Export:
+      Name: !Sub ${AWS::StackName}-EcrArn
+
+  CodeCommitURL:
+    Value: !Sub https://console.aws.amazon.com/codecommit/home?region=${AWS::Region}#/repository/${RepositoryName}/browse/HEAD/--/
+    Description: Git Repository URL
+
+  CloneUrlSsh:
+    Value: !Sub "git clone ${Code.CloneUrlSsh}"
+    Description: Git command for CodeCommit repository
+
+Outputs:
+  CodeBuildURL:
+    Value: !Sub https://console.aws.amazon.com/codebuild/home?region=${AWS::Region}#/projects/${CodeBuildProject}/view"
+    Description: CodeBuild URL

@@ -1,0 +1,88 @@
+---
+Parameters:
+
+  SecurityGroupInstance: 
+    Type: String
+  FsxSubnetId:
+    Type: String
+  KeyNameInstance:
+    Type: String
+  ImageIdInstance:
+    Type: String
+  InstanceType:
+    Type: String
+  VpcId:
+    Type: String 
+  PasswordAdmin:
+    Type: String
+  NETBIOSname:
+    Type: String
+  ADName: 
+    Type: String
+  StorageCapacityFsx:
+    Type: String
+  ThroughputCapacityFsx:
+    Type: String
+  SecurityGroupFsx:
+    Type: String
+  ADSubnetId1:
+    Type: String
+  ADSubnetId2:
+    Type: String
+  InstanceSubnetId:
+    Type: String
+
+  
+  
+   
+
+Resources:
+  EC2Instance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref ImageIdInstance  
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyNameInstance
+      SecurityGroupIds:
+        - !Ref SecurityGroupInstance  
+      SubnetId: !Ref InstanceSubnetId
+
+
+##ShortName é o NETBIOS name, password é do usuário admin padrão do AD.
+
+  ADteste:
+    Type: AWS::DirectoryService::MicrosoftAD
+    Properties:
+      Name: !Ref ADName
+      ShortName: !Ref NETBIOSname     
+      Password: !Ref PasswordAdmin
+      VpcSettings:
+        VpcId: !Ref VpcId
+        SubnetIds:
+          - !Ref ADSubnetId1
+          - !Ref ADSubnetId2
+          
+
+##FSX
+
+  FSxWindowsFileServer:
+   Type: 'AWS::FSx::FileSystem'
+   Properties:
+      FileSystemType: WINDOWS
+      StorageCapacity: !Ref StorageCapacityFsx
+      SubnetIds:
+        - !Ref FsxSubnetId
+      SecurityGroupIds:
+       - !Ref SecurityGroupFsx
+      WindowsConfiguration:
+        ActiveDirectoryId: !Ref ADteste 
+        ThroughputCapacity: !Ref ThroughputCapacityFsx
+        
+
+
+    
+    
+
+
+
+      

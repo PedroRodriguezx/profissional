@@ -1,0 +1,58 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: AWS CloudFormation Template to create IAM Policy, Role, and S3 Replication Rule
+
+Parameters:
+  SourceBucketName:
+    Type: String
+    Description: Name of the source S3 bucket for replication
+
+Resources:
+  S3ReplicationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: S3ReplicationRole
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: "s3.amazonaws.com"
+            Action: "sts:AssumeRole"
+
+  S3ReplicationPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3ReplicationPolicy
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Action:
+              - "s3:ListBucket"
+              - "s3:GetReplicationConfiguration"
+              - "s3:GetObjectVersionForReplication"
+              - "s3:GetObjectVersionAcl"
+              - "s3:GetObjectVersionTagging"
+              - "s3:GetObjectRetention"
+              - "s3:GetObjectLegalHold"
+            Effect: Allow
+            Resource:
+              - Fn::Sub: "arn:aws:s3:::${SourceBucketName}"
+              - Fn::Sub: "arn:aws:s3:::${SourceBucketName}/*"
+              - Fn::Sub: "arn:aws:s3:::json-source-bucket"
+              - Fn::Sub: "arn:aws:s3:::json-source-bucket/*"
+          - Action:
+              - "s3:ReplicateObject"
+              - "s3:ReplicateDelete"
+              - "s3:ReplicateTags"
+              - "s3:ObjectOwnerOverrideToBucketOwner"
+            Effect: Allow
+            Resource:
+              - Fn::Sub: "arn:aws:s3:::${SourceBucketName}/*"
+              - Fn::Sub: "arn:aws:s3:::json-source-bucket/*"
+      Roles:
+        - !Ref S3ReplicationRole
+
+Outputs:
+  S3ReplicationRoleOutput:
+    Description: The ARN of the S3 Replication Role
+    Value: !GetAtt S3ReplicationRole.Arn

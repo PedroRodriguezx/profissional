@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Copyright CloudDog 2020. Defines shared infraestructure for SSM.'
+
+
+Parameters:
+
+  Schedule:
+    Type: String
+    Default: cron(0 5 ? * SUN *)
+    Description: "Schedule time for the window. ex: cron(0 5 ? * SUN *)"
+
+  TargetTag:
+    Type: String
+    Default: patchmanager
+    Description: "Tag to search the instances"
+
+  TargetTagValue:
+    Type: String
+    Default: 'yes'
+    Description: "Value of Tag to search the instances"
+
+  PatchManagerAction:
+    Type: String
+    AllowedValues:
+    - 'Install'
+    - 'Scan'
+    Default: 'Install'
+    Description: Path Manager Action. Only Scan or Install patchs?
+
+Resources:
+
+  MaintenanceWindow:
+    Type: AWS::SSM::MaintenanceWindow
+    Properties:
+      Name: MaintenanceWindow
+      AllowUnassociatedTargets: true
+      Cutoff: 0
+      Description: Maintenance window for instances
+      Duration: 1
+      Schedule: !Ref Schedule
+
+  
+  MaintenanceWindowTarget:
+    Type: AWS::SSM::MaintenanceWindowTarget
+    DependsOn: MaintenanceWindow
+    Properties:
+      ResourceType: INSTANCE
+      Targets:
+        - Key: !Sub tag:${TargetTag}
+          Values:
+          - !Ref TargetTagValue
+      WindowId:
+        !Ref MaintenanceWindow
+
+
+  PatchTask:
+    Type: AWS::SSM::MaintenanceWindowTask
+    DependsOn: MaintenanceWindowTarget
+    Properties:
+      MaxConcurrency: 2
+      MaxErrors: 1
+      Priority: 1
+      Description: Apply OS patches on instances in target
+      TaskType: RUN_COMMAND
+      WindowId:
+        !Ref MaintenanceWindow
+      Targets:
+        - Key: WindowTargetIds
+          Values:
+          - !Ref MaintenanceWindowTarget
+      TaskArn: AWS-RunPatchBaseline
+      TaskInvocationParameters:
+       MaintenanceWindowRunCommandParameters:
+        Parameters:
+          Operation:
+            - !Ref PatchManagerAction 
+          RebootOption:
+            - NoReboot

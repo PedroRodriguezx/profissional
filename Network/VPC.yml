@@ -1,0 +1,1871 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Copyright CloudDog 2023. Defines a VPC with multiple availability zones, for public, app and data application tiers.'
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Prefix to Customize Resource Names
+        Parameters:
+          - ResourcesNamePrefix
+      - Label:
+          default: Availability Zone Configuration
+        Parameters:
+          - AvailabilityZones
+          - NumberOfAZs
+      - Label:
+          default: Network Configuration
+        Parameters:
+          - VPCCIDR
+          - CreatePublicSubnets
+          - CreateAppSubnets
+          - NatGatewayHighAvailability
+          - AppSubnet1CIDR
+          - AppSubnet2CIDR
+          - AppSubnet3CIDR
+          - AppSubnet4CIDR
+          - PublicSubnet1CIDR
+          - PublicSubnet2CIDR
+          - PublicSubnet3CIDR
+          - PublicSubnet4CIDR
+          - CreateDataSubnets
+          - DataSubnet1CIDR
+          - DataSubnet2CIDR
+          - DataSubnet3CIDR
+          - DataSubnet4CIDR
+          - LogsRetentionInDays
+          - VPCFlowLogsRoleArn
+          - CreateVPCFlowLogsRole
+          - CorporateCidrIp
+          - PutKubernetesTagInSubnets
+          - PublicSubnetWithinternetGateway
+      - Label:
+          default: Transit Gateway Configuration
+        Parameters:
+          - TransitGatewayID
+          - NumberOfVPCCIDRToTgw
+          - VPCCIDRToTgw
+    ParameterLabels:
+      AvailabilityZones:
+        default: Availability Zones
+      CreateDataSubnets:
+        default: Create Data Subnets for Database and Cache purposes
+      CreateAppSubnets:
+        default: Create App subnets
+      CreatePublicSubnets:
+        default: Create public subnets
+      CreateNatGateway:
+        default: Create Nat Gateway on VPC
+      NatGatewayHighAvailability:
+        default: Use one NAT Gateway in Each AZ
+      NumberOfAZs:
+        default: Number of Availability Zones
+      AppSubnet1CIDR:
+        default: App subnet 1 CIDR
+      DataSubnet1CIDR:
+        default: Data subnet 1 with dedicated network ACL CIDR
+      AppSubnet2CIDR:
+        default: App subnet 2 CIDR
+      DataSubnet2CIDR:
+        default: Data subnet 2 with dedicated network ACL CIDR
+      AppSubnet3CIDR:
+        default: App subnet 3 CIDR
+      DataSubnet3CIDR:
+        default: Data subnet 3 with dedicated network ACL CIDR
+      AppSubnet4CIDR:
+        default: App subnet 4 CIDR
+      DataSubnet4CIDR:
+        default: Data subnet 4 with dedicated network ACL CIDR
+      PublicSubnet1CIDR:
+        default: Public subnet 1 CIDR
+      PublicSubnet2CIDR:
+        default: Public subnet 2 CIDR
+      PublicSubnet3CIDR:
+        default: Public subnet 3 CIDR
+      PublicSubnet4CIDR:
+        default: Public subnet 4 CIDR
+      VPCCIDR:
+        default: VPC CIDR
+      LogsRetentionInDays:
+        default: Flow Logs Retention In Days
+      CreateVPCFlowLogs:
+        default: Create VPC Flow Logs
+      VPCFlowLogsRoleArn:
+        default: VPC Flow Logs Role ARN
+      CreateVPCFlowLogsRole:
+        default: Create VPC FlowLog IAM Role
+      CorporateCidrIp: 
+        default: Corporate address to allow Bastion Host access
+      PutKubernetesTagInSubnets:
+        default: Put Kubernetes tag on subnets?
+      TransitGatewayID:
+        Description: 'Trasit Gateway ID from Network Account'
+      ResourcesNamePrefix:
+        default: Prefix to Customize Resource Names
+      PublicSubnetWithinternetGateway:
+        default: Create internet gateway and attach on public subnets?
+      NumberOfVPCCIDRToTgw:
+        default: Quantity of CIDR to route on VPC to send to Transit Gateway
+      VPCCIDRToTgw:
+        default: CIDR to route on VPC to send to Transit Gateway, Separated by comma(,)
+            
+
+Parameters:
+  ResourcesNamePrefix:
+    Description: Prefix to Customize Resource Names
+    Type: String
+    # Default: company-env
+  AvailabilityZones:
+    Description: 'List of Availability Zones to use for the subnets in the VPC.'
+    Type: CommaDelimitedList
+  CreateDataSubnets:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+    Description: Set to true to create a network ACL protected subnet in each Availability
+      Zone. If false, the CIDR parameters for those subnets will be ignored. If true,
+      it also requires that the 'Create App subnets' parameter is also true to
+      have any effect.
+    Type: String
+  CreateAppSubnets:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Set to false to create only public subnets. If false, the CIDR parameters
+      for ALL private subnets will be ignored.
+    Type: String
+  CreatePublicSubnets:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Set to false to create only private subnets. If false, the CIDR parameters
+      for ALL public subnets will be ignored.
+    Type: String
+  CreateNatGateway:
+    Type: String
+    Description: Create Nat Gateway on VPC?
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+  NatGatewayHighAvailability:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Set to false to create only one nat gateway, if true one nat gateway will be created in each availability zone, costs might incur.
+    Type: String
+  NumberOfAZs:
+    AllowedValues:
+      - '2'
+      - '3'
+      - '4'
+    Default: '2'
+    Description: Number of Availability Zones to use in the VPC. This must match your selections in the list of Availability Zones parameter.
+    Type: String
+  AppSubnet1CIDR:
+    Default: 10.0.0.0/19
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Description: CIDR block for app subnet 1 located in Availability Zone 1
+    Type: String
+  DataSubnet1CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.192.0/21
+    Description: CIDR block for data subnet 1 with dedicated network ACL located in Availability Zone 1
+    Type: String
+  AppSubnet2CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.32.0/19
+    Description: CIDR block for app subnet 2 located in Availability Zone 2
+    Type: String
+  DataSubnet2CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.200.0/21
+    Description: CIDR block for data subnet 2 with dedicated network ACL located in Availability Zone 2
+    Type: String
+  AppSubnet3CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.64.0/19
+    Description: CIDR block for app subnet 3 located in Availability Zone 3
+    Type: String
+  DataSubnet3CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.208.0/21
+    Description: CIDR block for data subnet 3 with dedicated network ACL located in Availability Zone 3
+    Type: String
+  AppSubnet4CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.96.0/19
+    Description: CIDR block for app subnet 4 located in Availability Zone 4
+    Type: String
+  DataSubnet4CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.216.0/21
+    Description: CIDR block for data subnet 4 with dedicated network ACL located in Availability Zone 4
+    Type: String
+  PublicSubnet1CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.128.0/20
+    Description: CIDR block for the public DMZ subnet 1 located in Availability Zone 1
+    Type: String
+  PublicSubnet2CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.144.0/20
+    Description: CIDR block for the public DMZ subnet 2 located in Availability Zone 2
+    Type: String
+  PublicSubnet3CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.160.0/20
+    Description: CIDR block for the public DMZ subnet 3 located in Availability Zone 3
+    Type: String
+  PublicSubnet4CIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.176.0/20
+    Description: CIDR block for the public DMZ subnet 4 located in Availability Zone 4
+    Type: String
+  VPCCIDR:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 10.0.0.0/16
+    Description: CIDR block for the VPC
+    Type: String
+  LogsRetentionInDays:
+    Description: 'Specifies the number of days you want to retain log events in the specified log group.'
+    Type: Number
+    Default: 90
+    AllowedValues: [1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365, 400, 545, 731, 1827, 3653]
+  CreateVPCFlowLogs:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Create VPC Flow logs inside VPC?
+    Type: String
+  CreateVPCFlowLogsRole:
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+    Description: Create a Role to VPC Flow logs?
+    Type: String
+  VPCFlowLogsRoleArn:
+    Description: VPC Flow Logs Role ARN
+    Type: String
+  CorporateCidrIp:
+    AllowedPattern: '^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])(\/([0-9]|[1-2][0-9]|3[0-2]))$'
+    Default: 0.0.0.0/0
+    Description: CIDR block for the Corporate Network, leave 0.0.0.0/0 for Bastion Host access open.
+    Type: String
+  PutKubernetesTagInSubnets:
+    Description: 'Put Kubernetes tag on subnets?'
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+
+  TransitGatewayID:
+    Type: String
+    Description: 'Trasit Gateway ID from Network Account'
+    Default: ''
+  NumberOfVPCCIDRToTgw:
+    Type: String
+    Description: 'Quantity of CIDR to route on VPC to send to Transit Gateway'
+    Default: ''
+  VPCCIDRToTgw:
+    Type: String
+    Description: 'CIDR to route on VPC to send to Transit Gateway, Separated by comma(,)'
+    Default: ''
+
+  PublicSubnetWithinternetGateway:
+    Description: 'Create internet gateway and attach on public subnets?'
+    Type: String
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+
+Conditions:
+  PublicSubnetsCondition: !Equals [!Ref 'CreatePublicSubnets', 'true']
+  CreateVPCFlowLogsCondition: !Equals [!Ref 'CreateVPCFlowLogs', 'true']
+  VPCFlowLogsRoleCondition: !And [ !Condition 'CreateVPCFlowLogsCondition', !Equals [!Ref 'CreateVPCFlowLogsRole', 'true'] ]
+  CreateNatGatewayCondition: !Equals [!Ref 'CreateNatGateway', 'true']
+  NatGatewayHighAvailabilityCondition: !Equals [!Ref 'NatGatewayHighAvailability', 'true']
+  3AZCondition: !Or [!Equals [!Ref 'NumberOfAZs', '3'], !Condition '4AZCondition']
+  4AZCondition: !Equals [!Ref 'NumberOfAZs', '4']
+  3AZPublicCondition: !Or [ !And [!Condition '3AZCondition', !Condition 'PublicSubnetsCondition'], !Condition '4AZPublicCondition']
+  4AZPublicCondition: !And [!Condition '4AZCondition', !Condition 'PublicSubnetsCondition']
+  DataSubnetsCondition: !And [!Equals [!Ref 'CreateAppSubnets', 'true'],
+    !Equals [!Ref 'CreateDataSubnets', 'true']]
+  DataSubnets&3AZCondition: !And [!Condition 'DataSubnetsCondition',
+    !Condition '3AZCondition']
+  DataSubnets&4AZCondition: !And [!Condition 'DataSubnetsCondition',
+    !Condition '4AZCondition']
+  NATGatewayCondition: !And [!Condition 'CreateNatGatewayCondition',!Condition 'AppSubnetsCondition', !Condition 'PublicSubnetsCondition']
+  NATGateway&2AZCondition: !And [!Condition 'NATGatewayCondition', !Condition NatGatewayHighAvailabilityCondition]
+  NATGateway&3AZCondition: !And [!Condition 'NATGatewayCondition', !Condition '3AZCondition', !Condition NatGatewayHighAvailabilityCondition]
+  NATGateway&4AZCondition: !And [!Condition 'NATGatewayCondition', !Condition '4AZCondition', !Condition NatGatewayHighAvailabilityCondition]
+  DataSubnets&NATGatewayCondition: !And [!Condition 'DataSubnetsCondition', !Condition 'NATGatewayCondition']
+  DataSubnets&NATGateway&3AZCondition: !And [!Condition 'DataSubnets&3AZCondition', !Condition 'NATGateway&3AZCondition', !Condition NatGatewayHighAvailabilityCondition]
+  DataSubnets&NATGateway&4AZCondition: !And [!Condition 'DataSubnets&4AZCondition', !Condition 'NATGateway&4AZCondition', !Condition NatGatewayHighAvailabilityCondition]
+  NVirginiaRegionCondition: !Equals [!Ref 'AWS::Region', us-east-1]
+  AppSubnetsCondition: !Equals [!Ref 'CreateAppSubnets', 'true']
+  AppSubnets&3AZCondition: !And [!Condition 'AppSubnetsCondition', !Condition '3AZCondition']
+  AppSubnets&4AZCondition: !And [!Condition 'AppSubnetsCondition', !Condition '4AZCondition']
+  Nat&Public&AppSubnetsCondition: !And [!Condition 'NATGatewayCondition', !Condition 'PublicSubnetsCondition', !Condition 'AppSubnetsCondition']
+  Nat&Public&AppSubnets&3AZCondition: !And [!Condition 'NATGatewayCondition',!Condition 'PublicSubnetsCondition', !Condition 'AppSubnetsCondition', !Condition '3AZCondition']
+  Nat&Public&AppSubnets&4AZCondition: !And [!Condition 'NATGatewayCondition',!Condition 'PublicSubnetsCondition', !Condition 'AppSubnetsCondition', !Condition '4AZCondition']
+  S3VPCEndpointCondition: !And [!Condition 'AppSubnetsCondition', !Not [!Or [
+        !Equals [!Ref 'AWS::Region', us-gov-west-1], !Equals [!Ref 'AWS::Region',
+          cn-north-1]]]]
+  PutKubernetesTagInSubnetsCondition: !Equals [!Ref 'PutKubernetesTagInSubnets', 'true']
+
+
+  # Transit Gateway
+  TransitGatewayCondition: !Not [ !Equals [!Ref 'TransitGatewayID', ''] ]
+  PublicSubnet&InternetGatewayCondition: !And [!Condition 'PublicSubnetsCondition', !Equals [ !Ref 'PublicSubnetWithinternetGateway', 'true'] ]
+  PublicSubnet&NotInternetGateway&TransitGatewayCondition: !And [!Condition 'PublicSubnetsCondition', !Equals [ !Ref 'PublicSubnetWithinternetGateway', 'false'], !Condition 'TransitGatewayCondition' ]
+  AppSubnets&TransitGatewayCondition: !And [!Condition 'AppSubnetsCondition', !Condition 'TransitGatewayCondition', !Not [!Condition 'NATGatewayCondition'] ]
+  AppSubnets&TransitGateway&3AZCondition: !And [!Condition 'AppSubnets&3AZCondition', !Condition 'TransitGatewayCondition', !Not [!Condition 'NATGatewayCondition'] ]
+  AppSubnets&TransitGateway&4AZCondition: !And [!Condition 'AppSubnets&4AZCondition', !Condition 'TransitGatewayCondition', !Not [!Condition 'NATGatewayCondition'] ]
+  DataSubnets&TransitGatewayCondition: !And [!Condition 'DataSubnetsCondition', !Condition 'TransitGatewayCondition']
+  DataSubnets&TransitGateway&3AZCondition: !And [!Condition 'DataSubnets&3AZCondition', !Condition 'TransitGatewayCondition']
+  DataSubnets&TransitGateway&4AZCondition: !And [!Condition 'DataSubnets&4AZCondition', !Condition 'TransitGatewayCondition']
+  TransitGatewayAttachmentCondition: !And [!Condition 'AppSubnetsCondition', !Condition 'TransitGatewayCondition']
+
+  4VPCCIDRToTgwCondition: !Equals [!Ref 'NumberOfVPCCIDRToTgw', '4']
+  3VPCCIDRToTgwCondition: !Or [!Equals [!Ref 'NumberOfVPCCIDRToTgw', '3'], !Condition '4VPCCIDRToTgwCondition']
+  2VPCCIDRToTgwCondition: !Or [!Equals [!Ref 'NumberOfVPCCIDRToTgw', '2'], !Condition '4VPCCIDRToTgwCondition', !Condition '3VPCCIDRToTgwCondition']
+  1VPCCIDRToTgwCondition: !Or [!Equals [!Ref 'NumberOfVPCCIDRToTgw', '1'], !Condition '4VPCCIDRToTgwCondition', !Condition '3VPCCIDRToTgwCondition', !Condition '2VPCCIDRToTgwCondition']
+
+  PublicSubnet&1VPCCIDRToTgwCondition: !And [!Condition PublicSubnet&NotInternetGateway&TransitGatewayCondition, !Condition 1VPCCIDRToTgwCondition]
+  PublicSubnet&2VPCCIDRToTgwCondition: !And [!Condition PublicSubnet&NotInternetGateway&TransitGatewayCondition, !Condition 2VPCCIDRToTgwCondition]
+  PublicSubnet&3VPCCIDRToTgwCondition: !And [!Condition PublicSubnet&NotInternetGateway&TransitGatewayCondition, !Condition 3VPCCIDRToTgwCondition]
+  PublicSubnet&4VPCCIDRToTgwCondition: !And [!Condition PublicSubnet&NotInternetGateway&TransitGatewayCondition, !Condition 4VPCCIDRToTgwCondition]
+  
+  AppSubnets&1VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGatewayCondition, !Condition 1VPCCIDRToTgwCondition]
+  AppSubnets&2VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGatewayCondition, !Condition 2VPCCIDRToTgwCondition]
+  AppSubnets&3VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGatewayCondition, !Condition 3VPCCIDRToTgwCondition]
+  AppSubnets&4VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGatewayCondition, !Condition 4VPCCIDRToTgwCondition]
+  AppSubnets&3AZCondition&1VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&3AZCondition, !Condition 1VPCCIDRToTgwCondition]
+  AppSubnets&3AZCondition&2VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&3AZCondition, !Condition 2VPCCIDRToTgwCondition]
+  AppSubnets&3AZCondition&3VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&3AZCondition, !Condition 3VPCCIDRToTgwCondition]
+  AppSubnets&3AZCondition&4VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&3AZCondition, !Condition 4VPCCIDRToTgwCondition]
+  AppSubnets&4AZCondition&1VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&4AZCondition, !Condition 1VPCCIDRToTgwCondition]
+  AppSubnets&4AZCondition&2VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&4AZCondition, !Condition 2VPCCIDRToTgwCondition]
+  AppSubnets&4AZCondition&3VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&4AZCondition, !Condition 3VPCCIDRToTgwCondition]
+  AppSubnets&4AZCondition&4VPCCIDRToTgwCondition: !And [!Condition AppSubnets&TransitGateway&4AZCondition, !Condition 4VPCCIDRToTgwCondition]
+
+  DataSubnets&1VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGatewayCondition, !Condition 1VPCCIDRToTgwCondition]
+  DataSubnets&2VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGatewayCondition, !Condition 2VPCCIDRToTgwCondition]
+  DataSubnets&3VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGatewayCondition, !Condition 3VPCCIDRToTgwCondition]
+  DataSubnets&4VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGatewayCondition, !Condition 4VPCCIDRToTgwCondition]
+  DataSubnets&3AZCondition&1VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&3AZCondition, !Condition 1VPCCIDRToTgwCondition]
+  DataSubnets&3AZCondition&2VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&3AZCondition, !Condition 2VPCCIDRToTgwCondition]
+  DataSubnets&3AZCondition&3VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&3AZCondition, !Condition 3VPCCIDRToTgwCondition]
+  DataSubnets&3AZCondition&4VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&3AZCondition, !Condition 4VPCCIDRToTgwCondition]
+  DataSubnets&4AZCondition&1VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&4AZCondition, !Condition 1VPCCIDRToTgwCondition]
+  DataSubnets&4AZCondition&2VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&4AZCondition, !Condition 2VPCCIDRToTgwCondition]
+  DataSubnets&4AZCondition&3VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&4AZCondition, !Condition 3VPCCIDRToTgwCondition]
+  DataSubnets&4AZCondition&4VPCCIDRToTgwCondition: !And [!Condition DataSubnets&TransitGateway&4AZCondition, !Condition 4VPCCIDRToTgwCondition]
+
+
+
+Resources:
+  DHCPOptions:
+    Type: AWS::EC2::DHCPOptions
+    Properties:
+      DomainName: !If [NVirginiaRegionCondition, ec2.internal, !Join ['', [!Ref 'AWS::Region',
+            .compute.internal]]]
+      DomainNameServers:
+        - AmazonProvidedDNS
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DHCPOptionsSet
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref 'VPCCIDR'
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-VPC
+
+  VPCDHCPOptionsAssociation:
+    Type: AWS::EC2::VPCDHCPOptionsAssociation
+    Properties:
+      VpcId: !Ref 'VPC'
+      DhcpOptionsId: !Ref 'DHCPOptions'
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: PublicSubnetsCondition
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-InternetGateway
+        - Key: Network
+          Value: Public
+
+  VPCGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: PublicSubnetsCondition
+    Properties:
+      VpcId: !Ref 'VPC'
+      InternetGatewayId: !Ref 'InternetGateway'
+
+  AppSubnet1:
+    Condition: AppSubnetsCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'AppSubnet1CIDR'
+      AvailabilityZone: !Select ['0', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet1
+        - Key: Network
+          Value: Private
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/internal-elb
+            Value: 1
+          - !Ref AWS::NoValue
+
+  DataSubnet1:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'DataSubnet1CIDR'
+      AvailabilityZone: !Select ['0', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet1
+        - Key: Network
+          Value: Private
+
+  AppSubnet2:
+    Condition: AppSubnetsCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'AppSubnet2CIDR'
+      AvailabilityZone: !Select ['1', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet2
+        - Key: Network
+          Value: Private
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/internal-elb
+            Value: 1
+          - !Ref AWS::NoValue
+
+  DataSubnet2:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'DataSubnet2CIDR'
+      AvailabilityZone: !Select ['1', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet2
+        - Key: Network
+          Value: Private
+
+  AppSubnet3:
+    Condition: AppSubnets&3AZCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'AppSubnet3CIDR'
+      AvailabilityZone: !Select ['2', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet3
+        - Key: Network
+          Value: Private
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/internal-elb
+            Value: 1
+          - !Ref AWS::NoValue
+
+  DataSubnet3:
+    Condition: DataSubnets&3AZCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'DataSubnet3CIDR'
+      AvailabilityZone: !Select ['2', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet3
+        - Key: Network
+          Value: Private
+
+  AppSubnet4:
+    Condition: AppSubnets&4AZCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'AppSubnet4CIDR'
+      AvailabilityZone: !Select ['3', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet4
+        - Key: Network
+          Value: Private
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/internal-elb
+            Value: 1
+          - !Ref AWS::NoValue
+
+  DataSubnet4:
+    Condition: DataSubnets&4AZCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'DataSubnet4CIDR'
+      AvailabilityZone: !Select ['3', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet4
+        - Key: Network
+          Value: Private
+
+  PublicSubnet1:
+    Condition: PublicSubnetsCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'PublicSubnet1CIDR'
+      AvailabilityZone: !Select ['0', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-PublicSubnet1
+        - Key: Network
+          Value: Public
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/elb
+            Value: 1
+          - !Ref AWS::NoValue
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet2:
+    Condition: PublicSubnetsCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'PublicSubnet2CIDR'
+      AvailabilityZone: !Select ['1', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-PublicSubnet2
+        - Key: Network
+          Value: Public
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/elb
+            Value: 1
+          - !Ref AWS::NoValue
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet3:
+    Condition: 3AZPublicCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'PublicSubnet3CIDR'
+      AvailabilityZone: !Select ['2', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-PublicSubnet3
+        - Key: Network
+          Value: Public
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/elb
+            Value: 1
+          - !Ref AWS::NoValue
+      MapPublicIpOnLaunch: true
+
+  PublicSubnet4:
+    Condition: 4AZPublicCondition
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref 'VPC'
+      CidrBlock: !Ref 'PublicSubnet4CIDR'
+      AvailabilityZone: !Select ['3', !Ref 'AvailabilityZones']
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-PublicSubnet4
+        - Key: Network
+          Value: Public
+        - 'Fn::If':
+          - PutKubernetesTagInSubnetsCondition
+          -
+            Key: kubernetes.io/role/elb
+            Value: 1
+          - !Ref AWS::NoValue
+      MapPublicIpOnLaunch: true
+
+  AppSubnet1RouteTable:
+    Condition: AppSubnetsCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet1RouteTable
+        - Key: Network
+          Value: Private
+
+  AppSubnet1Route:
+    Condition: NATGatewayCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet1RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway1', !Ref 'AWS::NoValue']
+
+  AppSubnet1RouteTableAssociation:
+    Condition: AppSubnetsCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'AppSubnet1'
+      RouteTableId: !Ref 'AppSubnet1RouteTable'
+
+  AppSubnet2RouteTable:
+    Condition: AppSubnetsCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet2RouteTable
+        - Key: Network
+          Value: Private
+
+  AppSubnet2Route:
+    Condition: NATGatewayCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet2RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NATGateway&2AZCondition, !Ref 'NATGateway2', !Ref 'NATGateway1']
+
+  AppSubnet2RouteTableAssociation:
+    Condition: AppSubnetsCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'AppSubnet2'
+      RouteTableId: !Ref 'AppSubnet2RouteTable'
+
+  AppSubnet3RouteTable:
+    Condition: AppSubnets&3AZCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet3RouteTable
+        - Key: Network
+          Value: Private
+
+  AppSubnet3Route:
+    Condition: NATGateway&3AZCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet3RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NatGatewayHighAvailabilityCondition, !Ref 'NATGateway3', !Ref 'NATGateway1']
+
+  AppSubnet3RouteTableAssociation:
+    Condition: AppSubnets&3AZCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'AppSubnet3'
+      RouteTableId: !Ref 'AppSubnet3RouteTable'
+
+  AppSubnet4RouteTable:
+    Condition: AppSubnets&4AZCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-AppSubnet4RouteTable
+        - Key: Network
+          Value: Private
+
+  AppSubnet4Route:
+    Condition: NATGateway&4AZCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet4RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NatGatewayHighAvailabilityCondition, !Ref 'NATGateway4', !Ref 'NATGateway1']
+
+  AppSubnet4RouteTableAssociation:
+    Condition: AppSubnets&4AZCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'AppSubnet4'
+      RouteTableId: !Ref 'AppSubnet4RouteTable'
+
+  DataSubnet1RouteTable:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet1RouteTable
+        - Key: Network
+          Value: Private
+
+  DataSubnet1Route:
+    Condition: DataSubnets&NATGatewayCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet1RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NATGatewayCondition, !Ref 'NATGateway1', !Ref 'AWS::NoValue']
+
+  DataSubnet1RouteTableAssociation:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet1'
+      RouteTableId: !Ref 'DataSubnet1RouteTable'
+
+  DataSubnet1NetworkAcl:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet1NetworkAcl
+        - Key: Network
+          Value: NACL Protected
+
+  DataSubnet1NetworkAclEntryInbound:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: false
+      NetworkAclId: !Ref 'DataSubnet1NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet1NetworkAclEntryOutbound:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      NetworkAclId: !Ref 'DataSubnet1NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet1NetworkAclAssociation:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet1'
+      NetworkAclId: !Ref 'DataSubnet1NetworkAcl'
+
+  DataSubnet2RouteTable:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet2RouteTable
+        - Key: Network
+          Value: Private
+
+  DataSubnet2Route:
+    Condition: DataSubnets&NATGatewayCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet2RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NATGateway&2AZCondition, !Ref 'NATGateway2', !Ref 'NATGateway1']
+
+  DataSubnet2RouteTableAssociation:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet2'
+      RouteTableId: !Ref 'DataSubnet2RouteTable'
+
+  DataSubnet2NetworkAcl:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet2NetworkAcl
+        - Key: Network
+          Value: NACL Protected
+
+  DataSubnet2NetworkAclEntryInbound:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: false
+      NetworkAclId: !Ref 'DataSubnet2NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet2NetworkAclEntryOutbound:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      NetworkAclId: !Ref 'DataSubnet2NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet2NetworkAclAssociation:
+    Condition: DataSubnetsCondition
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet2'
+      NetworkAclId: !Ref 'DataSubnet2NetworkAcl'
+
+  DataSubnet3RouteTable:
+    Condition: DataSubnets&3AZCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet3RouteTable
+        - Key: Network
+          Value: Private
+
+  DataSubnet3Route:
+    Condition: DataSubnets&NATGateway&3AZCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet3RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NatGatewayHighAvailabilityCondition, !Ref 'NATGateway3', !Ref 'NATGateway1']
+
+  DataSubnet3RouteTableAssociation:
+    Condition: DataSubnets&3AZCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet3'
+      RouteTableId: !Ref 'DataSubnet3RouteTable'
+
+  DataSubnet3NetworkAcl:
+    Condition: DataSubnets&3AZCondition
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet3NetworkAcl
+        - Key: Network
+          Value: NACL Protected
+
+  DataSubnet3NetworkAclEntryInbound:
+    Condition: DataSubnets&3AZCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: false
+      NetworkAclId: !Ref 'DataSubnet3NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet3NetworkAclEntryOutbound:
+    Condition: DataSubnets&3AZCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      NetworkAclId: !Ref 'DataSubnet3NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet3NetworkAclAssociation:
+    Condition: DataSubnets&3AZCondition
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet3'
+      NetworkAclId: !Ref 'DataSubnet3NetworkAcl'
+
+  DataSubnet4RouteTable:
+    Condition: DataSubnets&4AZCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet4RouteTable
+        - Key: Network
+          Value: Private
+
+  DataSubnet4Route:
+    Condition: DataSubnets&NATGateway&4AZCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet4RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !If [NatGatewayHighAvailabilityCondition, !Ref 'NATGateway4', !Ref 'NATGateway1']
+
+  DataSubnet4RouteTableAssociation:
+    Condition: DataSubnets&4AZCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet4'
+      RouteTableId: !Ref 'DataSubnet4RouteTable'
+
+  DataSubnet4NetworkAcl:
+    Condition: DataSubnets&4AZCondition
+    Type: AWS::EC2::NetworkAcl
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-DataSubnet4NetworkAcl
+        - Key: Network
+          Value: NACL Protected
+
+  DataSubnet4NetworkAclEntryInbound:
+    Condition: DataSubnets&4AZCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: false
+      NetworkAclId: !Ref 'DataSubnet4NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet4NetworkAclEntryOutbound:
+    Condition: DataSubnets&4AZCondition
+    Type: AWS::EC2::NetworkAclEntry
+    Properties:
+      CidrBlock: 0.0.0.0/0
+      Egress: true
+      NetworkAclId: !Ref 'DataSubnet4NetworkAcl'
+      Protocol: -1
+      RuleAction: allow
+      RuleNumber: 100
+
+  DataSubnet4NetworkAclAssociation:
+    Condition: DataSubnets&4AZCondition
+    Type: AWS::EC2::SubnetNetworkAclAssociation
+    Properties:
+      SubnetId: !Ref 'DataSubnet4'
+      NetworkAclId: !Ref 'DataSubnet4NetworkAcl'
+
+  PublicSubnetRouteTable:
+    Condition: PublicSubnetsCondition
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref 'VPC'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-PublicSubnetsRouteTable
+        - Key: Network
+          Value: Public
+
+  PublicSubnetRouteInternet:
+    Condition: PublicSubnet&InternetGatewayCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref 'InternetGateway'
+
+  PublicSubnet1RouteTableAssociation:
+    Condition: PublicSubnetsCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicSubnet1'
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+
+  PublicSubnet2RouteTableAssociation:
+    Condition: PublicSubnetsCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicSubnet2'
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+
+  PublicSubnet3RouteTableAssociation:
+    Condition: 3AZPublicCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicSubnet3'
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+
+  PublicSubnet4RouteTableAssociation:
+    Condition: 4AZPublicCondition
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref 'PublicSubnet4'
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+
+  NAT1EIP:
+    Condition: Nat&Public&AppSubnetsCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NAT2EIP:
+    Condition: NATGateway&2AZCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NAT3EIP:
+    Condition: Nat&Public&AppSubnets&3AZCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NAT4EIP:
+    Condition: Nat&Public&AppSubnets&4AZCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NATGateway1:
+    Condition: NATGatewayCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NAT1EIP.AllocationId'
+      SubnetId: !Ref 'PublicSubnet1'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-NATGateway1
+
+  NATGateway2:
+    Condition: NATGateway&2AZCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NAT2EIP.AllocationId'
+      SubnetId: !Ref 'PublicSubnet2'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-NATGateway2
+
+  NATGateway3:
+    Condition: NATGateway&3AZCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NAT3EIP.AllocationId'
+      SubnetId: !Ref 'PublicSubnet3'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-NATGateway3
+
+  NATGateway4:
+    Condition: NATGateway&4AZCondition
+    DependsOn: VPCGatewayAttachment
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt 'NAT4EIP.AllocationId'
+      SubnetId: !Ref 'PublicSubnet4'
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-NATGateway4
+
+  S3VPCEndpoint:
+    Condition: S3VPCEndpointCondition
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action: '*'
+            Effect: Allow
+            Resource: '*'
+            Principal: '*'
+      RouteTableIds:
+        - !Ref 'AppSubnet1RouteTable'
+        - !Ref 'AppSubnet2RouteTable'
+        - !If [AppSubnets&3AZCondition, !Ref 'AppSubnet3RouteTable', !Ref 'AWS::NoValue']
+        - !If [AppSubnets&4AZCondition, !Ref 'AppSubnet4RouteTable', !Ref 'AWS::NoValue']
+        - !If [DataSubnetsCondition, !Ref 'DataSubnet1RouteTable',
+          !Ref 'AWS::NoValue']
+        - !If [DataSubnetsCondition, !Ref 'DataSubnet2RouteTable',
+          !Ref 'AWS::NoValue']
+        - !If [DataSubnets&3AZCondition, !Ref 'DataSubnet3RouteTable',
+          !Ref 'AWS::NoValue']
+        - !If [DataSubnets&4AZCondition, !Ref 'DataSubnet4RouteTable',
+          !Ref 'AWS::NoValue']
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcId: !Ref 'VPC'
+
+  DynamoDBVPCEndpoint:
+    Condition: S3VPCEndpointCondition
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Action: '*'
+            Effect: Allow
+            Resource: '*'
+            Principal: '*'
+      RouteTableIds:
+        - !Ref 'AppSubnet1RouteTable'
+        - !Ref 'AppSubnet2RouteTable'
+        - !If [AppSubnets&3AZCondition, !Ref 'AppSubnet3RouteTable', !Ref 'AWS::NoValue']
+        - !If [AppSubnets&4AZCondition, !Ref 'AppSubnet4RouteTable', !Ref 'AWS::NoValue']
+        - !If [DataSubnetsCondition, !Ref 'DataSubnet1RouteTable',
+          !Ref 'AWS::NoValue']
+        - !If [DataSubnetsCondition, !Ref 'DataSubnet2RouteTable',
+          !Ref 'AWS::NoValue']
+        - !If [DataSubnets&3AZCondition, !Ref 'DataSubnet3RouteTable',
+          !Ref 'AWS::NoValue']
+        - !If [DataSubnets&4AZCondition, !Ref 'DataSubnet4RouteTable',
+          !Ref 'AWS::NoValue']
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.dynamodb"
+      VpcId: !Ref 'VPC'
+      
+  VPCFlowLogsLogGroup:
+    Condition: CreateVPCFlowLogsCondition
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: !Ref LogsRetentionInDays
+
+  VPCFlowLogsRole:
+    Condition: VPCFlowLogsRoleCondition
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourcesNamePrefix}-VPCFlowLogsRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - vpc-flow-logs.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: /
+      ManagedPolicyArns:
+      - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+
+  VPCFlowLog:
+    Condition: CreateVPCFlowLogsCondition
+    Type: AWS::EC2::FlowLog
+    Properties:
+        DeliverLogsPermissionArn: !If [VPCFlowLogsRoleCondition, !GetAtt 'VPCFlowLogsRole.Arn', !Ref 'VPCFlowLogsRoleArn']
+        LogGroupName: !Ref 'VPCFlowLogsLogGroup'
+        ResourceId: !Ref 'VPC'
+        ResourceType: VPC
+        TrafficType: ALL
+
+  BastionSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Bastion access from Corporate Network
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: !Ref CorporateCidrIp
+      Tags:
+      - Key: Name
+        Value: !Sub ${ResourcesNamePrefix}-BastionSG
+
+  TransitGatewayAttachment:
+    Condition: TransitGatewayAttachmentCondition
+    Type: AWS::EC2::TransitGatewayAttachment
+    Properties:
+      SubnetIds:
+        - !Ref 'AppSubnet1'
+        - !Ref 'AppSubnet2'
+        - !If [AppSubnets&3AZCondition, !Ref 'AppSubnet3', !Ref 'AWS::NoValue']
+        - !If [AppSubnets&4AZCondition, !Ref 'AppSubnet4', !Ref 'AWS::NoValue']
+      TransitGatewayId: !Sub ${TransitGatewayID}
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ResourcesNamePrefix}-TransitGatewayAttachment
+        - Key: Account
+          Value: !Sub ${AWS::AccountId}
+        - Key: Region
+          Value: !Sub ${AWS::Region}
+
+  PublicSubnet1TgwRoute:
+    Condition: PublicSubnet&NotInternetGateway&TransitGatewayCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  PublicSubnet1TgwRouteCIDR1:
+    Condition: PublicSubnet&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  PublicSubnet1TgwRouteCIDR2:
+    Condition: PublicSubnet&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  PublicSubnet1TgwRouteCIDR3:
+    Condition: PublicSubnet&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  PublicSubnet1TgwRouteCIDR4:
+    Condition: PublicSubnet&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'PublicSubnetRouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet1TgwRoute:
+    Condition: AppSubnets&TransitGatewayCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet1RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet1TgwRouteCIDR1:
+    Condition: AppSubnets&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet1RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet1TgwRouteCIDR2:
+    Condition: AppSubnets&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet1RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet1TgwRouteCIDR3:
+    Condition: AppSubnets&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet1RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet1TgwRouteCIDR4:
+    Condition: AppSubnets&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet1RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet2TgwRoute:
+    Condition: AppSubnets&TransitGatewayCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet2RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet2TgwRouteCIDR1:
+    Condition: AppSubnets&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet2RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet2TgwRouteCIDR2:
+    Condition: AppSubnets&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet2RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet2TgwRouteCIDR3:
+    Condition: AppSubnets&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet2RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet2TgwRouteCIDR4:
+    Condition: AppSubnets&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet2RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet3TgwRoute:
+    Condition: AppSubnets&TransitGateway&3AZCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet3RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet3TgwRouteCIDR1:
+    Condition: AppSubnets&3AZCondition&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet3RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet3TgwRouteCIDR2:
+    Condition: AppSubnets&3AZCondition&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet3RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet3TgwRouteCIDR3:
+    Condition: AppSubnets&3AZCondition&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet3RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet3TgwRouteCIDR4:
+    Condition: AppSubnets&3AZCondition&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet3RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet4TgwRoute:
+    Condition: AppSubnets&TransitGateway&4AZCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet4RouteTable'
+      DestinationCidrBlock: 0.0.0.0/0
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet4TgwRouteCIDR1:
+    Condition: AppSubnets&4AZCondition&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet4RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet4TgwRouteCIDR2:
+    Condition: AppSubnets&4AZCondition&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet4RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet4TgwRouteCIDR3:
+    Condition: AppSubnets&4AZCondition&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet4RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  AppSubnet4TgwRouteCIDR4:
+    Condition: AppSubnets&4AZCondition&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'AppSubnet4RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+
+
+  DataSubnet1TgwRouteCIDR1:
+    Condition: DataSubnets&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet1RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet1TgwRouteCIDR2:
+    Condition: DataSubnets&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet1RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet1TgwRouteCIDR3:
+    Condition: DataSubnets&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet1RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet1TgwRouteCIDR4:
+    Condition: DataSubnets&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet1RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet2TgwRouteCIDR1:
+    Condition: DataSubnets&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet2RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet2TgwRouteCIDR2:
+    Condition: DataSubnets&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet2RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet2TgwRouteCIDR3:
+    Condition: DataSubnets&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet2RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet2TgwRouteCIDR4:
+    Condition: DataSubnets&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet2RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet3TgwRouteCIDR1:
+    Condition: DataSubnets&3AZCondition&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet3RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet3TgwRouteCIDR2:
+    Condition: DataSubnets&3AZCondition&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet3RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet3TgwRouteCIDR3:
+    Condition: DataSubnets&3AZCondition&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet3RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet3TgwRouteCIDR4:
+    Condition: DataSubnets&3AZCondition&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet3RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet4TgwRouteCIDR1:
+    Condition: DataSubnets&4AZCondition&1VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet4RouteTable'
+      DestinationCidrBlock: !Select [0, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet4TgwRouteCIDR2:
+    Condition: DataSubnets&4AZCondition&2VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet4RouteTable'
+      DestinationCidrBlock: !Select [1, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet4TgwRouteCIDR3:
+    Condition: DataSubnets&4AZCondition&3VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet4RouteTable'
+      DestinationCidrBlock: !Select [2, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+  DataSubnet4TgwRouteCIDR4:
+    Condition: DataSubnets&4AZCondition&4VPCCIDRToTgwCondition
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref 'DataSubnet4RouteTable'
+      DestinationCidrBlock: !Select [3, !Split [",", !Ref VPCCIDRToTgw]]
+      TransitGatewayId: !Ref 'TransitGatewayID'
+
+
+Outputs:
+  NAT1EIP:
+    Condition: Nat&Public&AppSubnetsCondition
+    Description: NAT 1 IP address
+    Value: !Ref 'NAT1EIP'
+    Export:
+      Name: !Sub '${AWS::StackName}-NAT1EIP'
+  NAT2EIP:
+    Condition: NATGateway&2AZCondition
+    Description: NAT 2 IP address
+    Value: !Ref 'NAT2EIP'
+    Export:
+      Name: !Sub '${AWS::StackName}-NAT2EIP'
+  NAT3EIP:
+    Condition: Nat&Public&AppSubnets&3AZCondition
+    Description: NAT 3 IP address
+    Value: !Ref 'NAT3EIP'
+    Export:
+      Name: !Sub '${AWS::StackName}-NAT3EIP'
+  NAT4EIP:
+    Condition: Nat&Public&AppSubnets&4AZCondition
+    Description: NAT 4 IP address
+    Value: !Ref 'NAT4EIP'
+    Export:
+      Name: !Sub '${AWS::StackName}-NAT4EIP'
+  AppSubnet1CIDR:
+    Condition: AppSubnetsCondition
+    Description: Private subnet 1A CIDR in Availability Zone 1
+    Value: !Ref 'AppSubnet1CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet1CIDR'
+  AppSubnet1ID:
+    Condition: AppSubnetsCondition
+    Description: Private subnet 1A ID in Availability Zone 1
+    Value: !Ref 'AppSubnet1'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet1ID'
+  DataSubnet1CIDR:
+    Condition: DataSubnetsCondition
+    Description: Private subnet 1B CIDR in Availability Zone 1
+    Value: !Ref 'DataSubnet1CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet1CIDR'
+  DataSubnet1ID:
+    Condition: DataSubnetsCondition
+    Description: Private subnet 1B ID in Availability Zone 1
+    Value: !Ref 'DataSubnet1'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet1ID'
+  AppSubnet2CIDR:
+    Condition: AppSubnetsCondition
+    Description: Private subnet 2A CIDR in Availability Zone 2
+    Value: !Ref 'AppSubnet2CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet2CIDR'
+  AppSubnet2ID:
+    Condition: AppSubnetsCondition
+    Description: Private subnet 2A ID in Availability Zone 2
+    Value: !Ref 'AppSubnet2'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet2ID'
+  DataSubnet2CIDR:
+    Condition: DataSubnetsCondition
+    Description: Private subnet 2B CIDR in Availability Zone 2
+    Value: !Ref 'DataSubnet2CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet2CIDR'
+  DataSubnet2ID:
+    Condition: DataSubnetsCondition
+    Description: Private subnet 2B ID in Availability Zone 2
+    Value: !Ref 'DataSubnet2'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet2ID'
+  AppSubnet3CIDR:
+    Condition: AppSubnets&3AZCondition
+    Description: Private subnet 3A CIDR in Availability Zone 3
+    Value: !Ref 'AppSubnet3CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet3CIDR'
+  AppSubnet3ID:
+    Condition: AppSubnets&3AZCondition
+    Description: Private subnet 3A ID in Availability Zone 3
+    Value: !Ref 'AppSubnet3'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet3ID'
+  DataSubnet3CIDR:
+    Condition: DataSubnets&3AZCondition
+    Description: Private subnet 3B CIDR in Availability Zone 3
+    Value: !Ref 'DataSubnet3CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet3CIDR'
+  DataSubnet3ID:
+    Condition: DataSubnets&3AZCondition
+    Description: Private subnet 3B ID in Availability Zone 3
+    Value: !Ref 'DataSubnet3'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet3ID'
+  AppSubnet4CIDR:
+    Condition: AppSubnets&4AZCondition
+    Description: Private subnet 4A CIDR in Availability Zone 4
+    Value: !Ref 'AppSubnet4CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet4CIDR'
+  AppSubnet4ID:
+    Condition: AppSubnets&4AZCondition
+    Description: Private subnet 4A ID in Availability Zone 4
+    Value: !Ref 'AppSubnet4'
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet4ID'
+  DataSubnet4CIDR:
+    Condition: DataSubnets&4AZCondition
+    Description: Private subnet 4B CIDR in Availability Zone 4
+    Value: !Ref 'DataSubnet4CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet4CIDR'
+  DataSubnet4ID:
+    Condition: DataSubnets&4AZCondition
+    Description: Private subnet 4B ID in Availability Zone 4
+    Value: !Ref 'DataSubnet4'
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet4ID'
+  AppSubnets:
+    Description: List of app subnets
+    Condition: AppSubnetsCondition
+    Value:
+        !Join
+          - ','
+          - - !If [AppSubnetsCondition, !Ref 'AppSubnet1', !Ref 'AWS::NoValue']
+            - !If [AppSubnetsCondition, !Ref 'AppSubnet2', !Ref 'AWS::NoValue']
+            - !If [AppSubnets&3AZCondition, !Ref 'AppSubnet3', !Ref 'AWS::NoValue']
+            - !If [AppSubnets&4AZCondition, !Ref 'AppSubnet4', !Ref 'AWS::NoValue']
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnets'
+  DataSubnets:
+    Description: List of data subnets
+    Condition: DataSubnetsCondition
+    Value:
+        !Join
+          - ','
+          - - !If [DataSubnetsCondition, !Ref 'DataSubnet1', !Ref 'AWS::NoValue']
+            - !If [DataSubnetsCondition, !Ref 'DataSubnet2', !Ref 'AWS::NoValue']
+            - !If [DataSubnets&3AZCondition, !Ref 'DataSubnet3', !Ref 'AWS::NoValue']
+            - !If [DataSubnets&4AZCondition, !Ref 'DataSubnet4', !Ref 'AWS::NoValue']
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnets'
+  PublicSubnet1CIDR:
+    Condition: PublicSubnetsCondition
+    Description: Public subnet 1 CIDR in Availability Zone 1
+    Value: !Ref 'PublicSubnet1CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet1CIDR'
+  PublicSubnet1ID:
+    Condition: PublicSubnetsCondition
+    Description: Public subnet 1 ID in Availability Zone 1
+    Value: !Ref 'PublicSubnet1'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet1ID'
+  PublicSubnet2CIDR:
+    Condition: PublicSubnetsCondition
+    Description: Public subnet 2 CIDR in Availability Zone 2
+    Value: !Ref 'PublicSubnet2CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet2CIDR'
+  PublicSubnet2ID:
+    Condition: PublicSubnetsCondition
+    Description: Public subnet 2 ID in Availability Zone 2
+    Value: !Ref 'PublicSubnet2'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet2ID'
+  PublicSubnet3CIDR:
+    Condition: 3AZPublicCondition
+    Description: Public subnet 3 CIDR in Availability Zone 3
+    Value: !Ref 'PublicSubnet3CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet3CIDR'
+  PublicSubnet3ID:
+    Condition: 3AZPublicCondition
+    Description: Public subnet 3 ID in Availability Zone 3
+    Value: !Ref 'PublicSubnet3'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet3ID'
+  PublicSubnet4CIDR:
+    Condition: 4AZPublicCondition
+    Description: Public subnet 4 CIDR in Availability Zone 4
+    Value: !Ref 'PublicSubnet4CIDR'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet4CIDR'
+  PublicSubnet4ID:
+    Condition: 4AZPublicCondition
+    Description: Public subnet 4 ID in Availability Zone 4
+    Value: !Ref 'PublicSubnet4'
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnet4ID'
+  PublicSubnets:
+    Description: List of public subnets
+    Condition: PublicSubnetsCondition
+    Value:
+        !Join
+          - ','
+          - - !If [PublicSubnetsCondition, !Ref 'PublicSubnet1', !Ref 'AWS::NoValue']
+            - !If [PublicSubnetsCondition, !Ref 'PublicSubnet2', !Ref 'AWS::NoValue']
+            - !If [3AZPublicCondition, !Ref 'PublicSubnet3', !Ref 'AWS::NoValue']
+            - !If [4AZPublicCondition, !Ref 'PublicSubnet4', !Ref 'AWS::NoValue']
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnets'
+  S3VPCEndpoint:
+    Condition: S3VPCEndpointCondition
+    Description: S3 VPC Endpoint
+    Value: !Ref 'S3VPCEndpoint'
+    Export:
+      Name: !Sub '${AWS::StackName}-S3VPCEndpoint'
+  AppSubnet1RouteTable:
+    Condition: AppSubnetsCondition
+    Value: !Ref 'AppSubnet1RouteTable'
+    Description: Private subnet 1A route table
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet1RouteTable'
+  DataSubnet1RouteTable:
+    Condition: DataSubnetsCondition
+    Value: !Ref 'DataSubnet1RouteTable'
+    Description: Private subnet 1B route table
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet1RouteTable'
+  AppSubnet2RouteTable:
+    Condition: AppSubnetsCondition
+    Value: !Ref 'AppSubnet2RouteTable'
+    Description: Private subnet 2A route table
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet2RouteTable'
+  DataSubnet2RouteTable:
+    Condition: DataSubnetsCondition
+    Value: !Ref 'DataSubnet2RouteTable'
+    Description: Private subnet 2B route table
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet2RouteTable'
+  AppSubnet3RouteTable:
+    Condition: AppSubnets&3AZCondition
+    Value: !Ref 'AppSubnet3RouteTable'
+    Description: Private subnet 3A route table
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet3RouteTable'
+  DataSubnet3RouteTable:
+    Condition: DataSubnets&3AZCondition
+    Value: !Ref 'DataSubnet3RouteTable'
+    Description: Private subnet 3B route table
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet3RouteTable'
+  AppSubnet4RouteTable:
+    Condition: AppSubnets&4AZCondition
+    Value: !Ref 'AppSubnet4RouteTable'
+    Description: Private subnet 4A route table
+    Export:
+      Name: !Sub '${AWS::StackName}-AppSubnet4RouteTable'
+  DataSubnet4RouteTable:
+    Condition: DataSubnets&4AZCondition
+    Value: !Ref 'DataSubnet4RouteTable'
+    Description: Private subnet 4B route table
+    Export:
+      Name: !Sub '${AWS::StackName}-DataSubnet4RouteTable'
+  PublicSubnetRouteTable:
+    Condition: PublicSubnetsCondition
+    Value: !Ref 'PublicSubnetRouteTable'
+    Description: Public subnet route table
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnetRouteTable'
+  PrivateSubnetRouteTables:
+    Value:
+        !Join
+          - ','
+          - - !If [AppSubnetsCondition, !Ref 'AppSubnet1RouteTable', !Ref 'AWS::NoValue']
+            - !If [AppSubnetsCondition, !Ref 'AppSubnet2RouteTable', !Ref 'AWS::NoValue']
+            - !If [DataSubnetsCondition, !Ref 'DataSubnet1RouteTable', !Ref 'AWS::NoValue']
+            - !If [DataSubnetsCondition, !Ref 'DataSubnet2RouteTable', !Ref 'AWS::NoValue']
+            - !If [AppSubnets&3AZCondition, !Ref 'AppSubnet3RouteTable', !Ref 'AWS::NoValue']
+            - !If [AppSubnets&4AZCondition, !Ref 'AppSubnet4RouteTable', !Ref 'AWS::NoValue']
+            - !If [DataSubnets&3AZCondition, !Ref 'DataSubnet3RouteTable', !Ref 'AWS::NoValue']
+            - !If [DataSubnets&4AZCondition, !Ref 'DataSubnet4RouteTable', !Ref 'AWS::NoValue']
+    Description: List of private subnet route tables
+  VPCCIDR:
+    Value: !Ref 'VPCCIDR'
+    Description: VPC CIDR
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCCIDR'
+  VPCID:
+    Value: !Ref 'VPC'
+    Description: VPC ID
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCID'
+  VPCRegion:
+    Value: !Ref AWS::Region
+    Description: VPC Region
+
+  BastionSG:
+    Value: !Ref BastionSG
+    Description: Bastion Security Group
+    Export:
+      Name: !Sub '${AWS::StackName}-BastionSGID'
+      
+  TransitGatewayAttachmentId:
+    Condition: AppSubnets&TransitGatewayCondition
+    Description: Transit Gateway Attachment Id
+    Value: !GetAtt TransitGatewayAttachment.Id
+    Export:
+      Name: !Sub '${AWS::StackName}-TransitGatewayAttachmentId'

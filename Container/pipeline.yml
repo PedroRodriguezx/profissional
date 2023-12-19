@@ -1,6 +1,5 @@
 # Este template é de java e está puxando do codecommit---
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Copyright CloudDog 2020. Automate provisioning of CodeBuild with CodePipeline to deploy ECS Containers'
 
 Metadata:
   AWS::CloudFormation::Interface:

@@ -53,8 +53,8 @@ resource "aws_iam_policy" "s3_replication_policy" {
       "Resource": [
         "arn:aws:s3:::${var.SourceBucketName}",
         "arn:aws:s3:::${var.SourceBucketName}/*",
-        "arn:aws:s3:::json-source-bucket",
-        "arn:aws:s3:::json-source-bucket/*"
+        "arn:aws:s3:::${var.TargetBucketName}",
+        "arn:aws:s3:::${var.TargetBucketName}/*"
       ]
     },
     {
@@ -67,7 +67,7 @@ resource "aws_iam_policy" "s3_replication_policy" {
       "Effect": "Allow",
       "Resource": [
         "arn:aws:s3:::${var.SourceBucketName}/*",
-        "arn:aws:s3:::json-source-bucket/*"
+        "arn:aws:s3:::${var.TargetBucketName}/*"
       ]
     }
   ]
@@ -99,7 +99,7 @@ resource "aws_s3_bucket_replication_configuration" "replication" {
     id = "Rule1"
     status = "Enabled"
     destination {
-      bucket        = "arn:aws:s3:::json-source-bucket"
+      bucket        = "arn:aws:s3:::${var.TargetBucketName}/*"
       storage_class = "STANDARD"
     }
   }
